@@ -64,6 +64,14 @@
   height: 10px;
 }
 
+.pdf-viewer-page-view > canvas {
+  -webkit-transform-origin: 0% 0%;
+     -moz-transform-origin: 0% 0%;
+      -ms-transform-origin: 0% 0%;
+       -o-transform-origin: 0% 0%;
+          transform-origin: 0% 0%;
+}
+
 .pdf-viewer-page-view > .icon-spinner {
   color: #888;
   font-size: 36px;
