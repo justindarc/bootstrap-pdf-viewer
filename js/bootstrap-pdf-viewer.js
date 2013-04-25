@@ -522,8 +522,10 @@ PDFViewerPageView.prototype = {
   init: function() {
     if (this.$canvas) return;
 
-    var width  = this._width;
-    var height = this._height;
+    var devicePixelRatio = window.devicePixelRatio || 1;
+
+    var width  = this._width  * devicePixelRatio;
+    var height = this._height * devicePixelRatio;
 
     var $canvas = this.$canvas = $('<canvas id="page-' + this._page.pageNumber + '" width="' + width + '" height="' + height + '"/>').appendTo(this.$element);
     var ctx = this.ctx = $canvas[0].getContext('2d');
@@ -532,10 +534,22 @@ PDFViewerPageView.prototype = {
     ctx.fillStyle = 'rgb(255, 255, 255)';
     ctx.fillRect(0, 0, width, height);
     ctx.restore();
+    ctx.scale(devicePixelRatio, devicePixelRatio);
 
     this.$spinner.show();
 
     this._renderingState = PDFViewer.RenderingStateType.INITIAL;
+
+    if (devicePixelRatio === 1) return;
+
+    var inverseRatio = 1 / devicePixelRatio;
+    $canvas.css({
+      '-webkit-transform': 'scale(' + inverseRatio + ')',
+         '-moz-transform': 'scale(' + inverseRatio + ')',
+          '-ms-transform': 'scale(' + inverseRatio + ')',
+           '-o-transform': 'scale(' + inverseRatio + ')',
+              'transform': 'scale(' + inverseRatio + ')'
+    });
   },
 
   release: function() {

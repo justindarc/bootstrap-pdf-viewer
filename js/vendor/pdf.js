@@ -16,8 +16,8 @@
  */
 
 var PDFJS = {};
-PDFJS.version = '0.8.73';
-PDFJS.build = 'f93582a';
+PDFJS.version = '0.8.49';
+PDFJS.build = '369b81b';
 
 (function pdfjsWrapper() {
   // Use strict in our context only - users might not want it
@@ -39,808 +39,12 @@ PDFJS.build = 'f93582a';
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
-// NOTE: Be careful what goes in this file, as it is also used from the context
-// of the addon. So using warn/error in here will break the addon.
+/* globals assertWellFormed, calculateMD5, Catalog, error, info, isArray,
+           isArrayBuffer, isDict, isName, isStream, isString, Lexer,
+           Linearization, NullStream, PartialEvaluator, shadow, Stream,
+           StreamsSequenceStream, stringToPDFString, TODO, Util, warn, XRef */
 
 'use strict';
-
-
-//#if (FIREFOX || MOZCENTRAL)
-//
-//Components.utils.import('resource://gre/modules/Services.jsm');
-//
-//var EXPORTED_SYMBOLS = ['NetworkManager'];
-//
-//function log(aMsg) {
-//  var msg = 'network.js: ' + (aMsg.join ? aMsg.join('') : aMsg);
-//  Services.console.logStringMessage(msg);
-//  // TODO(mack): dump() doesn't seem to work here...
-//  dump(msg + '\n');
-//}
-//#else
-function log(aMsg) {
-  console.log(aMsg);
-}
-//#endif
-
-var NetworkManager = (function NetworkManagerClosure() {
-  function NetworkManager(url, args) {
-    this.url = url;
-    args = args || {};
-    this.httpHeaders = args.httpHeaders || {};
-    this.getXhr = args.getXhr ||
-      function NetworkManager_getXhr() {
-        return new XMLHttpRequest();
-      };
-
-    this.currXhrId = 0;
-    this.pendingRequests = {};
-    this.loadedRequests = {};
-  }
-
-  function getArrayBuffer(xhr) {
-    var data = (xhr.mozResponseArrayBuffer || xhr.mozResponse ||
-                xhr.responseArrayBuffer || xhr.response);
-    if (typeof data !== 'string') {
-      return data;
-    }
-    var length = data.length;
-    var buffer = new Uint8Array(length);
-    for (var i = 0; i < length; i++) {
-      buffer[i] = data.charCodeAt(i) & 0xFF;
-    }
-    return buffer;
-  }
-
-  NetworkManager.prototype = {
-    requestRange: function NetworkManager_requestRange(begin, end, listeners) {
-      var args = {
-        begin: begin,
-        end: end
-      };
-      for (var prop in listeners) {
-        args[prop] = listeners[prop];
-      }
-      return this.request(args);
-    },
-
-    requestFull: function NetworkManager_requestRange(listeners) {
-      return this.request(listeners);
-    },
-
-    request: function NetworkManager_requestRange(args) {
-      var xhr = this.getXhr();
-      var xhrId = this.currXhrId++;
-      var pendingRequest = this.pendingRequests[xhrId] = {
-        xhr: xhr
-      };
-
-      xhr.open('GET', this.url);
-      for (var property in this.httpHeaders) {
-        var value = this.httpHeaders[property];
-        if (typeof value === 'undefined') {
-          continue;
-        }
-        xhr.setRequestHeader(property, value);
-      }
-      if ('begin' in args && 'end' in args) {
-        var rangeStr = args.begin + '-' + (args.end - 1);
-        xhr.setRequestHeader('Range', 'bytes=' + rangeStr);
-        pendingRequest.expectedStatus = 206;
-      } else {
-        pendingRequest.expectedStatus = 200;
-      }
-
-      xhr.mozResponseType = xhr.responseType = 'arraybuffer';
-
-      if (args.onProgress) {
-        xhr.onprogress = args.onProgress;
-      }
-      if (args.onError) {
-        xhr.onerror = function(evt) {
-          args.onError(xhr.status);
-        };
-      }
-      xhr.onreadystatechange = this.onStateChange.bind(this, xhrId);
-
-      pendingRequest.onHeadersReceived = args.onHeadersReceived;
-      pendingRequest.onDone = args.onDone;
-      pendingRequest.onError = args.onError;
-
-      xhr.send(null);
-
-      return xhrId;
-    },
-
-    onStateChange: function NetworkManager_onStateChange(xhrId, evt) {
-      var pendingRequest = this.pendingRequests[xhrId];
-      if (!pendingRequest) {
-        // Maybe abortRequest was called...
-        return;
-      }
-
-      var xhr = pendingRequest.xhr;
-      if (xhr.readyState >= 2 && pendingRequest.onHeadersReceived) {
-        pendingRequest.onHeadersReceived();
-        delete pendingRequest.onHeadersReceived;
-      }
-
-      if (xhr.readyState !== 4) {
-        return;
-      }
-
-      if (!(xhrId in this.pendingRequests)) {
-        // The XHR request might have been aborted in onHeadersReceived()
-        // callback, in which case we should abort request
-        return;
-      }
-
-      delete this.pendingRequests[xhrId];
-
-      if (xhr.status === 0) {
-        if (pendingRequest.onError) {
-          pendingRequest.onError(xhr.status);
-        }
-        return;
-      }
-
-      if (xhr.status !== pendingRequest.expectedStatus) {
-        if (pendingRequest.onError) {
-          pendingRequest.onError(xhr.status);
-        }
-        return;
-      }
-
-      this.loadedRequests[xhrId] = true;
-
-      var chunk = getArrayBuffer(xhr);
-      if (pendingRequest.expectedStatus === 206) {
-        var rangeHeader = xhr.getResponseHeader('Content-Range');
-        var matches = /bytes (\d+)-(\d+)\/(\d+)/.exec(rangeHeader);
-        var begin = parseInt(matches[1], 10);
-        var end = parseInt(matches[2], 10) + 1;
-        pendingRequest.onDone({
-          begin: begin,
-          end: end,
-          chunk: chunk
-        });
-      } else {
-        pendingRequest.onDone({
-          chunk: chunk
-        });
-      }
-    },
-
-    hasPendingRequests: function NetworkManager_hasPendingRequests() {
-      for (var xhrId in this.pendingRequests) {
-        return true;
-      }
-      return false;
-    },
-
-    getRequestXhr: function NetworkManager_getXhr(xhrId) {
-      return this.pendingRequests[xhrId].xhr;
-    },
-
-    isPendingRequest: function NetworkManager_isPendingRequest(xhrId) {
-      return xhrId in this.pendingRequests;
-    },
-
-    isLoadedRequest: function NetworkManager_isLoadedRequest(xhrId) {
-      return xhrId in this.loadedRequests;
-    },
-
-    abortAllRequests: function NetworkManager_abortAllRequests() {
-      for (var xhrId in this.pendingRequests) {
-        this.abortRequest(xhrId | 0);
-      }
-    },
-
-    abortRequest: function NetworkManager_abortRequest(xhrId) {
-      var xhr = this.pendingRequests[xhrId].xhr;
-      delete this.pendingRequests[xhrId];
-      xhr.abort();
-    }
-  };
-
-  return NetworkManager;
-})();
-
-
-
-var ChunkedStream = (function ChunkedStreamClosure() {
-  function ChunkedStream(length, chunkSize) {
-    this.bytes = new Uint8Array(length);
-    this.start = 0;
-    this.pos = 0;
-    this.end = length;
-    this.chunkSize = chunkSize;
-    this.loadedChunks = [];
-    this.numChunksLoaded = 0;
-    this.numChunks = Math.ceil(length / chunkSize);
-  }
-
-  // required methods for a stream. if a particular stream does not
-  // implement these, an error should be thrown
-  ChunkedStream.prototype = {
-
-    getMissingChunks: function ChunkedStream_getMissingChunks() {
-      var chunks = [];
-      for (var chunk = 0, n = this.numChunks; chunk < n; ++chunk) {
-        if (!(chunk in this.loadedChunks)) {
-          chunks.push(chunk);
-        }
-      }
-      return chunks;
-    },
-
-    allChunksLoaded: function ChunkedStream_allChunksLoaded() {
-      return this.numChunksLoaded === this.numChunks;
-    },
-
-    onReceiveData: function(begin, chunk) {
-      var end = begin + chunk.byteLength;
-
-      assert(begin % this.chunkSize === 0, 'Bad begin offset: ' + begin);
-      // Using this.length is inaccurate here since this.start can be moved
-      // See ChunkedStream.moveStart()
-      var length = this.bytes.length;
-      assert(end % this.chunkSize === 0 || end === length,
-        'Bad end offset: ' + end);
-
-      this.bytes.set(new Uint8Array(chunk), begin);
-      var chunkSize = this.chunkSize;
-      var beginChunk = Math.floor(begin / chunkSize);
-      var endChunk = Math.floor((end - 1) / chunkSize) + 1;
-
-      for (var chunk = beginChunk; chunk < endChunk; ++chunk) {
-        if (!(chunk in this.loadedChunks)) {
-          this.loadedChunks[chunk] = true;
-          ++this.numChunksLoaded;
-        }
-      }
-    },
-
-    ensureRange: function ChunkedStream_ensureRange(begin, end) {
-      if (begin >= end) {
-        return;
-      }
-
-      var chunkSize = this.chunkSize;
-      var beginChunk = Math.floor(begin / chunkSize);
-      var endChunk = Math.floor((end - 1) / chunkSize) + 1;
-      for (var chunk = beginChunk; chunk < endChunk; ++chunk) {
-        if (!(chunk in this.loadedChunks)) {
-          throw new MissingDataException(begin, end);
-        }
-      }
-    },
-
-    nextEmptyChunk: function ChunkedStream_nextEmptyChunk(beginChunk) {
-      for (var chunk = beginChunk, n = this.numChunks; chunk < n; ++chunk) {
-        if (!(chunk in this.loadedChunks)) {
-          return chunk;
-        }
-      }
-      // Wrap around to beginning
-      for (var chunk = 0; chunk < beginChunk; ++chunk) {
-        if (!(chunk in this.loadedChunks)) {
-          return chunk;
-        }
-      }
-      return null;
-    },
-
-    hasChunk: function ChunkedStream_hasChunk(chunk) {
-      return chunk in this.loadedChunks;
-    },
-
-    get length() {
-      return this.end - this.start;
-    },
-
-    getByte: function ChunkedStream_getByte() {
-      var pos = this.pos;
-      if (pos >= this.end) {
-        return null;
-      }
-      this.ensureRange(pos, pos + 1);
-      return this.bytes[this.pos++];
-    },
-
-    // returns subarray of original buffer
-    // should only be read
-    getBytes: function ChunkedStream_getBytes(length) {
-      var bytes = this.bytes;
-      var pos = this.pos;
-      var strEnd = this.end;
-
-      if (!length) {
-        this.ensureRange(pos, strEnd);
-        return bytes.subarray(pos, strEnd);
-      }
-
-      var end = pos + length;
-      if (end > strEnd)
-        end = strEnd;
-      this.ensureRange(pos, end);
-
-      this.pos = end;
-      return bytes.subarray(pos, end);
-    },
-
-    getByteRange: function ChunkedStream_getBytes(begin, end) {
-      this.ensureRange(begin, end);
-      return this.bytes.subarray(begin, end);
-    },
-
-    lookChar: function ChunkedStream_lookChar() {
-      var pos = this.pos;
-      if (pos >= this.end)
-        return null;
-      this.ensureRange(pos, pos + 1);
-      return String.fromCharCode(this.bytes[pos]);
-    },
-
-    getChar: function ChunkedStream_getChar() {
-      var pos = this.pos;
-      if (pos >= this.end)
-        return null;
-      this.ensureRange(pos, pos + 1);
-      return String.fromCharCode(this.bytes[this.pos++]);
-    },
-
-    skip: function ChunkedStream_skip(n) {
-      if (!n)
-        n = 1;
-      this.pos += n;
-    },
-
-    reset: function ChunkedStream_reset() {
-      this.pos = this.start;
-    },
-
-    moveStart: function ChunkedStream_moveStart() {
-      this.start = this.pos;
-    },
-
-    makeSubStream: function ChunkedStream_makeSubStream(start, length, dict) {
-      function ChunkedStreamSubstream() {}
-      ChunkedStreamSubstream.prototype = Object.create(this);
-      var subStream = new ChunkedStreamSubstream();
-      subStream.pos = subStream.start = start;
-      subStream.end = start + length || this.end;
-      subStream.dict = dict;
-      return subStream;
-    },
-
-    isStream: true
-  };
-
-  return ChunkedStream;
-})();
-
-var ChunkedStreamManager = (function ChunkedStreamManagerClosure() {
-
-  function ChunkedStreamManager(length, chunkSize, url, args) {
-    this.stream = new ChunkedStream(length, chunkSize);
-    this.length = length;
-    this.chunkSize = chunkSize;
-    this.url = url;
-    this.disableAutoFetch = args.disableAutoFetch;
-    var msgHandler = this.msgHandler = args.msgHandler;
-
-    if (args.chunkedViewerLoading) {
-      msgHandler.on('OnDataRange', this.onReceiveData.bind(this));
-      this.sendRequest = function ChunkedStreamManager_sendRequest(begin, end) {
-        msgHandler.send('RequestDataRange', { begin: begin, end: end });
-      };
-    } else {
-
-      var getXhr = function getXhr() {
-//#if B2G
-//      return new XMLHttpRequest({ mozSystem: true });
-//#else
-        return new XMLHttpRequest();
-//#endif
-      };
-      this.networkManager = new NetworkManager(this.url, {
-        getXhr: getXhr,
-        httpHeaders: args.httpHeaders
-      });
-      var self = this;
-      this.sendRequest = function ChunkedStreamManager_sendRequest(begin, end) {
-        this.networkManager.requestRange(begin, end, {
-          onDone: this.onReceiveData.bind(this),
-        });
-      };
-    }
-
-    this.currRequestId = 0;
-
-    this.chunksNeededByRequest = {};
-    this.requestsByChunk = {};
-    this.callbacksByRequest = {};
-
-    this.loadedStream = new Promise();
-  }
-
-  ChunkedStreamManager.prototype = {
-
-    onLoadedStream: function ChunkedStreamManager_getLoadedStream() {
-      return this.loadedStream;
-    },
-
-    // Get all the chunks that are not yet loaded and groups them into
-    // contiguous ranges to load in as few requests as possible
-    requestAllChunks: function ChunkedStreamManager_requestAllChunks() {
-      var missingChunks = this.stream.getMissingChunks();
-      var chunksToRequest = [];
-      for (var i = 0, n = missingChunks.length; i < n; ++i) {
-        var chunk = missingChunks[i];
-        if (!(chunk in this.requestsByChunk)) {
-          this.requestsByChunk[chunk] = [];
-          chunksToRequest.push(chunk);
-        }
-      }
-      var groupedChunks = this.groupChunks(chunksToRequest);
-      for (var i = 0, n = groupedChunks.length; i < n; ++i) {
-        var groupedChunk = groupedChunks[i];
-        var begin = groupedChunk.beginChunk * this.chunkSize;
-        var end = Math.min(groupedChunk.endChunk * this.chunkSize, this.length);
-        this.sendRequest(begin, end);
-      }
-
-      return this.loadedStream;
-    },
-
-    getStream: function ChunkedStreamManager_getStream() {
-      return this.stream;
-    },
-
-    // Loads any chunks in the requested range that are not yet loaded
-    requestRange: function ChunkedStreamManager_requestRange(
-                      begin, end, callback) {
-
-      end = Math.min(end, this.length);
-
-      var beginChunk = this.getBeginChunk(begin);
-      var endChunk = this.getEndChunk(end);
-
-      var requestId = this.currRequestId++;
-
-      var chunksNeeded;
-      this.chunksNeededByRequest[requestId] = chunksNeeded = {};
-      for (var chunk = beginChunk; chunk < endChunk; ++chunk) {
-        if (!this.stream.hasChunk(chunk)) {
-          chunksNeeded[chunk] = true;
-        }
-      }
-
-      if (isEmptyObj(chunksNeeded)) {
-        callback();
-        return;
-      }
-
-      this.callbacksByRequest[requestId] = callback;
-
-      var chunksToRequest = [];
-      for (var chunk in chunksNeeded) {
-        chunk = chunk | 0;
-        if (!(chunk in this.requestsByChunk)) {
-          this.requestsByChunk[chunk] = [];
-          chunksToRequest.push(chunk);
-        }
-        this.requestsByChunk[chunk].push(requestId);
-      }
-
-      if (!chunksToRequest.length) {
-        return;
-      }
-
-      var groupedChunksToRequest = this.groupChunks(chunksToRequest);
-
-      for (var i = 0; i < groupedChunksToRequest.length; ++i) {
-        var groupedChunk = groupedChunksToRequest[i];
-        var begin = groupedChunk.beginChunk * this.chunkSize;
-        var end = Math.min(groupedChunk.endChunk * this.chunkSize, this.length);
-        this.sendRequest(begin, end);
-      }
-    },
-
-    // Groups a sorted array of chunks into as few continguous larger
-    // chunks as possible
-    groupChunks: function ChunkedStreamManager_groupChunks(chunks) {
-      var groupedChunks = [];
-      var beginChunk;
-      var prevChunk;
-      for (var i = 0; i < chunks.length; ++i) {
-        var chunk = chunks[i];
-
-        if (!beginChunk) {
-          beginChunk = chunk;
-        }
-
-        if (prevChunk && prevChunk + 1 !== chunk) {
-          groupedChunks.push({
-            beginChunk: beginChunk, endChunk: prevChunk + 1});
-          beginChunk = chunk;
-        }
-        if (i + 1 === chunks.length) {
-          groupedChunks.push({
-            beginChunk: beginChunk, endChunk: chunk + 1});
-        }
-
-        prevChunk = chunk;
-      }
-      return groupedChunks;
-    },
-
-    onReceiveData: function ChunkedStreamManager_onReceiveData(args) {
-      var chunk = args.chunk;
-      var begin = args.begin;
-      var end = begin + chunk.byteLength;
-
-      var beginChunk = this.getBeginChunk(begin);
-      var endChunk = this.getEndChunk(end);
-
-      this.stream.onReceiveData(begin, chunk);
-      if (this.stream.allChunksLoaded()) {
-        this.loadedStream.resolve(this.stream);
-      }
-
-      var loadedRequests = [];
-      for (var chunk = beginChunk; chunk < endChunk; ++chunk) {
-
-        var requestIds = this.requestsByChunk[chunk];
-        delete this.requestsByChunk[chunk];
-
-        for (var i = 0; i < requestIds.length; ++i) {
-          var requestId = requestIds[i];
-          var chunksNeeded = this.chunksNeededByRequest[requestId];
-          if (chunk in chunksNeeded) {
-            delete chunksNeeded[chunk];
-          }
-
-          if (!isEmptyObj(chunksNeeded)) {
-            continue;
-          }
-
-          loadedRequests.push(requestId);
-        }
-      }
-
-      // If there are no pending requests, automatically fetch the next
-      // unfetched chunk of the PDF
-      if (!this.disableAutoFetch && isEmptyObj(this.requestsByChunk)) {
-        var nextEmptyChunk;
-        if (this.stream.numChunksLoaded === 1) {
-          // This is a special optimization so that after fetching the first
-          // chunk, rather than fetching the second chunk, we fetch the last
-          // chunk.
-          var lastChunk = this.stream.numChunks - 1;
-          if (!this.stream.hasChunk(lastChunk)) {
-            nextEmptyChunk = lastChunk;
-          }
-        } else {
-          nextEmptyChunk = this.stream.nextEmptyChunk(endChunk);
-        }
-        if (isInt(nextEmptyChunk)) {
-          var nextEmptyByte = nextEmptyChunk * this.chunkSize;
-          this.requestRange(nextEmptyByte, nextEmptyByte + this.chunkSize,
-              function() {});
-        }
-      }
-
-      for (var i = 0; i < loadedRequests.length; ++i) {
-        var requestId = loadedRequests[i];
-        var callback = this.callbacksByRequest[requestId];
-        delete this.callbacksByRequest[requestId];
-        callback();
-      }
-
-      this.msgHandler.send('DocProgress', {
-        loaded: this.stream.numChunksLoaded * this.chunkSize,
-        total: this.length
-      });
-    },
-
-    getBeginChunk: function ChunkedStreamManager_getBeginChunk(begin) {
-      var chunk = Math.floor(begin / this.chunkSize);
-      return chunk;
-    },
-
-    getEndChunk: function ChunkedStreamManager_getEndChunk(end) {
-      if (end % this.chunkSize === 0) {
-        return end / this.chunkSize;
-      }
-
-      // 0 -> 0
-      // 1 -> 1
-      // 99 -> 1
-      // 100 -> 1
-      // 101 -> 2
-      var chunk = Math.floor((end - 1) / this.chunkSize) + 1;
-      return chunk;
-    }
-  };
-
-  return ChunkedStreamManager;
-})();
-
-
-
-// TODO(mack): Make use of PDFJS.Util.inherit() when it becomes available
-var BasePdfManager = (function BasePdfManagerClosure() {
-  function BasePdfManager() {
-    throw new Error('Cannot initialize BaseManagerManager');
-  }
-
-  BasePdfManager.prototype = {
-    onLoadedStream: function BasePdfManager_onLoadedStream() {
-      throw new NotImplementedException();
-    },
-
-    ensureModel: function BasePdfManager_ensureModel(prop, args) {
-      return this.ensure(this.pdfModel, prop, args);
-    },
-
-    ensureXRef: function BasePdfManager_ensureXRef(prop, args) {
-      return this.ensure(this.pdfModel.xref, prop, args);
-    },
-
-    ensureCatalog: function BasePdfManager_ensureCatalog(prop, args) {
-      return this.ensure(this.pdfModel.catalog, prop, args);
-    },
-
-    getPage: function BasePdfManager_pagePage(pageIndex) {
-      return this.pdfModel.getPage(pageIndex);
-    },
-
-    ensure: function BasePdfManager_ensure(obj, prop, args) {
-      return new NotImplementedException();
-    },
-
-    requestRange: function BasePdfManager_ensure(begin, end) {
-      return new NotImplementedException();
-    },
-
-    requestLoadedStream: function BasePdfManager_requestLoadedStream() {
-      return new NotImplementedException();
-    }
-  };
-
-  return BasePdfManager;
-})();
-
-var LocalPdfManager = (function LocalPdfManagerClosure() {
-  function LocalPdfManager(data, password) {
-    var stream = new Stream(data);
-    this.pdfModel = new PDFDocument(this, stream, password);
-    this.loadedStream = new Promise();
-    this.loadedStream.resolve(stream);
-  }
-
-  LocalPdfManager.prototype = Object.create(BasePdfManager.prototype);
-  LocalPdfManager.prototype.constructor = LocalPdfManager;
-
-  LocalPdfManager.prototype.ensure =
-      function LocalPdfManager_ensure(obj, prop, args) {
-    var promise = new Promise();
-    try {
-      var value = obj[prop];
-      var result;
-      if (typeof(value) === 'function') {
-        result = value.apply(obj, args);
-      } else {
-        result = value;
-      }
-      promise.resolve(result);
-    } catch (e) {
-      console.log(e.stack);
-      promise.reject(e);
-    }
-    return promise;
-  };
-
-  LocalPdfManager.prototype.requestRange =
-      function LocalPdfManager_requestRange(begin, end) {
-    var promise = new Promise();
-    promise.resolve();
-    return promise;
-  };
-
-  LocalPdfManager.prototype.requestLoadedStream =
-      function LocalPdfManager_requestLoadedStream() {
-  };
-
-  LocalPdfManager.prototype.onLoadedStream =
-      function LocalPdfManager_getLoadedStream() {
-    return this.loadedStream;
-  };
-
-  return LocalPdfManager;
-})();
-
-var NetworkPdfManager = (function NetworkPdfManagerClosure() {
-
-  var CHUNK_SIZE = 65536;
-
-  function NetworkPdfManager(args, msgHandler) {
-
-    this.msgHandler = msgHandler;
-
-    var params = {
-      msgHandler: msgHandler,
-      httpHeaders: args.httpHeaders,
-      chunkedViewerLoading: args.chunkedViewerLoading,
-      disableAutoFetch: args.disableAutoFetch
-    };
-    this.streamManager = new ChunkedStreamManager(args.length, CHUNK_SIZE,
-                                                  args.url, params);
-
-    this.pdfModel = new PDFDocument(this, this.streamManager.getStream(),
-                                    args.password);
-  }
-
-  NetworkPdfManager.prototype = Object.create(BasePdfManager.prototype);
-  NetworkPdfManager.prototype.constructor = NetworkPdfManager;
-
-  NetworkPdfManager.prototype.ensure =
-      function NetworkPdfManager_ensure(obj, prop, args) {
-    var promise = new Promise();
-    this.ensureHelper(promise, obj, prop, args);
-    return promise;
-  };
-
-  NetworkPdfManager.prototype.ensureHelper =
-      function NetworkPdfManager_ensureHelper(promise, obj, prop, args) {
-    try {
-      var result;
-      var value = obj[prop];
-      if (typeof(value) === 'function') {
-        result = value.apply(obj, args);
-      } else {
-        result = value;
-      }
-      promise.resolve(result);
-    } catch(e) {
-      if (!(e instanceof MissingDataException)) {
-        console.log(e.stack);
-        promise.reject(e);
-        return;
-      }
-
-      this.streamManager.requestRange(e.begin, e.end, function() {
-        this.ensureHelper(promise, obj, prop, args);
-      }.bind(this));
-    }
-  };
-
-  NetworkPdfManager.prototype.requestRange =
-      function NetworkPdfManager_requestRange(begin, end) {
-    var promise = new Promise();
-    this.streamManager.requestRange(begin, end, function() {
-      promise.resolve();
-    });
-    return promise;
-  };
-
-  NetworkPdfManager.prototype.requestLoadedStream =
-      function NetworkPdfManager_requestLoadedStream() {
-    this.streamManager.requestAllChunks();
-  };
-
-  NetworkPdfManager.prototype.onLoadedStream =
-      function NetworkPdfManager_getLoadedStream() {
-    return this.streamManager.onLoadedStream();
-  };
-
-  return NetworkPdfManager;
-})();
-
-
 
 var globalScope = (typeof window === 'undefined') ? this : window;
 
@@ -856,6 +60,69 @@ if (!globalScope.PDFJS) {
   globalScope.PDFJS = {};
 }
 
+// getPdf()
+// Convenience function to perform binary Ajax GET
+// Usage: getPdf('http://...', callback)
+//        getPdf({
+//                 url:String ,
+//                 [,progress:Function, error:Function]
+//               },
+//               callback)
+function getPdf(arg, callback) {
+  var params = arg;
+  if (typeof arg === 'string')
+    params = { url: arg };
+//#if !B2G
+  var xhr = new XMLHttpRequest();
+//#else
+//var xhr = new XMLHttpRequest({mozSystem: true});
+//#endif
+  xhr.open('GET', params.url);
+
+  var headers = params.headers;
+  if (headers) {
+    for (var property in headers) {
+      if (typeof headers[property] === 'undefined')
+        continue;
+
+      xhr.setRequestHeader(property, params.headers[property]);
+    }
+  }
+
+  xhr.mozResponseType = xhr.responseType = 'arraybuffer';
+
+  var protocol = params.url.substring(0, params.url.indexOf(':') + 1);
+  xhr.expected = (protocol === 'http:' || protocol === 'https:') ? 200 : 0;
+
+  if ('progress' in params)
+    xhr.onprogress = params.progress || undefined;
+
+  var calledErrorBack = false;
+
+  if ('error' in params) {
+    xhr.onerror = function errorBack() {
+      if (!calledErrorBack) {
+        calledErrorBack = true;
+        params.error();
+      }
+    };
+  }
+
+  xhr.onreadystatechange = function getPdfOnreadystatechange(e) {
+    if (xhr.readyState === 4) {
+      if (xhr.status === xhr.expected) {
+        var data = (xhr.mozResponseArrayBuffer || xhr.mozResponse ||
+                    xhr.responseArrayBuffer || xhr.response);
+        callback(data);
+      } else if (params.error && !calledErrorBack) {
+        calledErrorBack = true;
+        params.error(e);
+      }
+    }
+  };
+  xhr.send(null);
+}
+globalScope.PDFJS.getPdf = getPdf;
 globalScope.PDFJS.pdfBug = false;
 
 
@@ -880,16 +147,11 @@ var Page = (function PageClosure() {
     return appearance;
   }
 
-  function Page(pdfManager, xref, pageIndex, pageDict, ref) {
-    this.pdfManager = pdfManager;
+  function Page(xref, pageIndex, pageDict, ref) {
     this.pageIndex = pageIndex;
     this.pageDict = pageDict;
     this.xref = xref;
     this.ref = ref;
-    this.idCounters = {
-      font: 0,
-      obj: 0
-    };
   }
 
   Page.prototype = {
@@ -908,7 +170,7 @@ var Page = (function PageClosure() {
       return obj;
     },
     get content() {
-      return this.getPageProp('Contents');
+      return shadow(this, 'content', this.getPageProp('Contents'));
     },
     get resources() {
       return shadow(this, 'resources', this.inheritPageProp('Resources'));
@@ -955,7 +217,6 @@ var Page = (function PageClosure() {
     },
     getContentStream: function Page_getContentStream() {
       var content = this.content;
-      var stream;
       if (isArray(content)) {
         // fetching items
         var xref = this.xref;
@@ -963,79 +224,37 @@ var Page = (function PageClosure() {
         var streams = [];
         for (i = 0; i < n; ++i)
           streams.push(xref.fetchIfRef(content[i]));
-        stream = new StreamsSequenceStream(streams);
+        content = new StreamsSequenceStream(streams);
       } else if (isStream(content)) {
-        stream = content;
-      } else {
+        content.reset();
+      } else if (!content) {
         // replacing non-existent page content with empty one
-        stream = new NullStream();
+        content = new NullStream();
       }
-      return stream;
+      return content;
     },
-    getOperatorList: function Page_getOperatorList(handler) {
-      var self = this;
-      var promise = new Promise();
+    getOperatorList: function Page_getOperatorList(handler, dependency) {
+      var xref = this.xref;
+      var contentStream = this.getContentStream();
+      var resources = this.resources;
+      var pe = this.pe = new PartialEvaluator(
+                                xref, handler, this.pageIndex,
+                                'p' + this.pageIndex + '_');
 
-      var pageListPromise = new Promise();
-      var annotationListPromise = new Promise();
+      var list = pe.getOperatorList(contentStream, resources, dependency);
 
-      var pdfManager = this.pdfManager;
-      var contentStreamPromise = pdfManager.ensure(this, 'getContentStream',
-                                                   []);
-      var resourcesPromise = pdfManager.ensure(this, 'resources');
+      var annotations = this.getAnnotationsForDraw();
+      var annotationEvaluator = new PartialEvaluator(
+        xref, handler, this.pageIndex,
+        'p' + this.pageIndex + '_annotation');
+      var annotationsList = annotationEvaluator.getAnnotationsOperatorList(
+          annotations, dependency);
 
-      var partialEvaluator = new PartialEvaluator(
-            pdfManager, this.xref, handler,
-            this.pageIndex, 'p' + this.pageIndex + '_',
-            this.idCounters);
+      Util.concatenateToArray(list.fnArray, annotationsList.fnArray);
+      Util.concatenateToArray(list.argsArray, annotationsList.argsArray);
 
-      var dataPromises = Promise.all(
-          [contentStreamPromise, resourcesPromise]);
-      dataPromises.then(function(data) {
-        var contentStream = data[0];
-        var resources = data[1];
-
-        pdfManager.ensure(partialEvaluator, 'getOperatorList',
-                          [contentStream, resources]).then(
-          function(opListPromise) {
-            opListPromise.then(function(data) {
-              pageListPromise.resolve(data);
-            });
-          }
-        );
-      });
-
-      pdfManager.ensure(this, 'getAnnotationsForDraw', []).then(
-        function(annotations) {
-          pdfManager.ensure(partialEvaluator, 'getAnnotationsOperatorList',
-                            [annotations]).then(
-            function(opListPromise) {
-              opListPromise.then(function(data) {
-                annotationListPromise.resolve(data);
-              });
-            }
-          );
-        }
-      );
-
-      Promise.all([pageListPromise, annotationListPromise]).then(
-        function(datas) {
-          var pageData = datas[0];
-          var pageQueue = pageData.queue;
-          var annotationData = datas[1];
-          var annotationQueue = annotationData.queue;
-          Util.concatenateToArray(pageQueue.fnArray, annotationQueue.fnArray);
-          Util.concatenateToArray(pageQueue.argsArray,
-                                  annotationQueue.argsArray);
-          PartialEvaluator.optimizeQueue(pageQueue);
-          Util.extendObj(pageData.dependencies, annotationData.dependencies);
-
-          promise.resolve(pageData);
-        }
-      );
-
-      return promise;
-
+      pe.optimizeQueue(list);
+      return list;
     },
     extractTextContent: function Page_extractTextContent() {
       var handler = {
@@ -1043,41 +262,14 @@ var Page = (function PageClosure() {
         send: function nullHandlerSend() {}
       };
 
-      var self = this;
+      var xref = this.xref;
+      var contentStream = this.getContentStream();
+      var resources = xref.fetchIfRef(this.resources);
 
-      var textContentPromise = new Promise();
-
-      var pdfManager = this.pdfManager;
-      var contentStreamPromise = pdfManager.ensure(this, 'getContentStream',
-                                                   []);
-      var resourcesPromise = new Promise();
-      pdfManager.ensure(this, 'resources').then(function(resources) {
-        pdfManager.ensure(self.xref, 'fetchIfRef', [resources]).then(
-          function(resources) {
-            resourcesPromise.resolve(resources);
-          }
-        );
-      });
-
-      var dataPromises = Promise.all([contentStreamPromise,
-                                      resourcesPromise]);
-      dataPromises.then(function(data) {
-        var contentStream = data[0];
-        var resources = data[1];
-        var partialEvaluator = new PartialEvaluator(
-              pdfManager, self.xref, handler,
-              self.pageIndex, 'p' + self.pageIndex + '_',
-              self.idCounters);
-
-        partialEvaluator.getTextContent(
-            contentStream, resources).then(function(bidiTexts) {
-          textContentPromise.resolve({
-            bidiTexts: bidiTexts
-          });
-        });
-      });
-
-      return textContentPromise;
+      var pe = new PartialEvaluator(
+                     xref, handler, this.pageIndex,
+                     'p' + this.pageIndex + '_');
+      return pe.getTextContent(contentStream, resources);
     },
     getLinks: function Page_getLinks() {
       var links = [];
@@ -1317,21 +509,20 @@ var Page = (function PageClosure() {
  * `PDFDocument` objects on the main thread created.
  */
 var PDFDocument = (function PDFDocumentClosure() {
-  function PDFDocument(pdfManager, arg, password) {
+  function PDFDocument(arg, password) {
     if (isStream(arg))
-      init.call(this, pdfManager, arg, password);
+      init.call(this, arg, password);
     else if (isArrayBuffer(arg))
-      init.call(this, pdfManager, new Stream(arg), password);
+      init.call(this, new Stream(arg), password);
     else
       error('PDFDocument: Unknown argument type');
   }
 
-  function init(pdfManager, stream, password) {
+  function init(stream, password) {
     assertWellFormed(stream.length > 0, 'stream must have data');
-    this.pdfManager = pdfManager;
     this.stream = stream;
-    var xref = new XRef(this.stream, password);
-    this.xref = xref;
+    this.setup(password);
+    this.acroForm = this.catalog.catDict.get('AcroForm');
   }
 
   function find(stream, needle, limit, backwards) {
@@ -1369,25 +560,15 @@ var PDFDocument = (function PDFDocumentClosure() {
   };
 
   PDFDocument.prototype = {
-    parse: function PDFDocument_parse(recoveryMode) {
-      this.setup(recoveryMode);
-      this.acroForm = this.catalog.catDict.get('AcroForm');
-    },
-
     get linearization() {
       var length = this.stream.length;
       var linearization = false;
       if (length) {
         try {
           linearization = new Linearization(this.stream);
-          if (linearization.length != length) {
+          if (linearization.length != length)
             linearization = false;
-          }
         } catch (err) {
-          if (err instanceof MissingDataException) {
-            throw err;
-          }
-
           warn('The linearization data is not available ' +
                'or unreadable pdf data is found');
           linearization = false;
@@ -1466,13 +647,14 @@ var PDFDocument = (function PDFDocumentClosure() {
       }
       // May not be a PDF file, continue anyway.
     },
-    parseStartXRef: function PDFDocument_parseStartXRef() {
-      var startXRef = this.startXRef;
-      this.xref.setStartXRef(startXRef);
-    },
-    setup: function PDFDocument_setup(recoveryMode) {
-      this.xref.parse(recoveryMode);
-      this.catalog = new Catalog(this.pdfManager, this.xref);
+    setup: function PDFDocument_setup(password) {
+      this.checkHeader();
+      var xref = new XRef(this.stream,
+                          this.startXRef,
+                          this.mainXRefEntriesOffset,
+                          password);
+      this.xref = xref;
+      this.catalog = new Catalog(xref);
     },
     get numPages() {
       var linearization = this.linearization;
@@ -1480,7 +662,7 @@ var PDFDocument = (function PDFDocumentClosure() {
       // shadow the prototype getter
       return shadow(this, 'numPages', num);
     },
-    get documentInfo() {
+    getDocumentInfo: function PDFDocument_getDocumentInfo() {
       var docInfo = {
         PDFFormatVersion: this.pdfFormatVersion,
         IsAcroFormPresent: !!this.acroForm
@@ -1503,9 +685,9 @@ var PDFDocument = (function PDFDocumentClosure() {
           }
         }
       }
-      return shadow(this, 'documentInfo', docInfo);
+      return shadow(this, 'getDocumentInfo', docInfo);
     },
-    get fingerprint() {
+    getFingerprint: function PDFDocument_getFingerprint() {
       var xref = this.xref, fileID;
       if (xref.trailer.has('ID')) {
         fileID = '';
@@ -1524,15 +706,10 @@ var PDFDocument = (function PDFDocumentClosure() {
         }
       }
 
-      return shadow(this, 'fingerprint', fileID);
+      return shadow(this, 'getFingerprint', fileID);
     },
-
-    traversePages: function PDFDocument_traversePages() {
-      this.catalog.traversePages();
-    },
-
-    getPage: function PDFDocument_getPage(pageIndex) {
-      return this.catalog.getPage(pageIndex);
+    getPage: function PDFDocument_getPage(n) {
+      return this.catalog.getPage(n);
     }
   };
 
@@ -1711,45 +888,6 @@ var MissingPDFException = (function MissingPDFExceptionClosure() {
   return MissingPDFException;
 })();
 
-var NotImplementedException = (function NotImplementedExceptionClosure() {
-  function NotImplementedException(msg) {
-    this.message = msg;
-  }
-
-  NotImplementedException.prototype = new Error();
-  NotImplementedException.prototype.name = 'NotImplementedException';
-  NotImplementedException.constructor = NotImplementedException;
-
-  return NotImplementedException;
-})();
-
-var MissingDataException = (function MissingDataExceptionClosure() {
-  function MissingDataException(begin, end) {
-    this.begin = begin;
-    this.end = end;
-    this.message = 'Missing data [begin, end)';
-  }
-
-  MissingDataException.prototype = new Error();
-  MissingDataException.prototype.name = 'MissingDataException';
-  MissingDataException.constructor = MissingDataException;
-
-  return MissingDataException;
-})();
-
-var XRefParseException = (function XRefParseExceptionClosure() {
-  function XRefParseException(msg) {
-    this.message = msg;
-  }
-
-  XRefParseException.prototype = new Error();
-  XRefParseException.prototype.name = 'XRefParseException';
-  XRefParseException.constructor = XRefParseException;
-
-  return XRefParseException;
-})();
-
-
 function bytesToString(bytes) {
   var str = '';
   var length = bytes.length;
@@ -1919,19 +1057,8 @@ var Util = PDFJS.Util = (function UtilClosure() {
     return num < 0 ? -1 : 1;
   };
 
-  // TODO(mack): Rename appendToArray
   Util.concatenateToArray = function concatenateToArray(arr1, arr2) {
-    Array.prototype.push.apply(arr1, arr2);
-  };
-
-  Util.prependToArray = function concatenateToArray(arr1, arr2) {
-    Array.prototype.unshift.apply(arr1, arr2);
-  };
-
-  Util.extendObj = function extendObj(obj1, obj2) {
-    for (var key in obj2) {
-      obj1[key] = obj2[key];
-    }
+    return Array.prototype.push.apply(arr1, arr2);
   };
 
   return Util;
@@ -2052,13 +1179,6 @@ function stringToPDFString(str) {
 
 function stringToUTF8String(str) {
   return decodeURIComponent(escape(str));
-}
-
-function isEmptyObj(obj) {
-  for (var key in obj) {
-    return false;
-  }
-  return true;
 }
 
 function isBool(v) {
@@ -2375,13 +1495,9 @@ PDFJS.createBlob = function createBlob(data, contentType) {
  *  - httpHeaders - Basic authentication headers.
  *  - password - For decrypting password-protected PDFs.
  *
- * @param {object} pdfDataRangeTransport is optional. It is used if you want
- * to manually serve range requests for data in the PDF. See viewer.js for
- * an example of pdfDataRangeTransport's interface.
- *
  * @return {Promise} A promise that is resolved with {PDFDocumentProxy} object.
  */
-PDFJS.getDocument = function getDocument(source, pdfDataRangeTransport) {
+PDFJS.getDocument = function getDocument(source) {
   var workerInitializedPromise, workerReadyPromise, transport;
 
   if (typeof source === 'string') {
@@ -2408,8 +1524,7 @@ PDFJS.getDocument = function getDocument(source, pdfDataRangeTransport) {
 
   workerInitializedPromise = new PDFJS.Promise();
   workerReadyPromise = new PDFJS.Promise();
-  transport = new WorkerTransport(workerInitializedPromise,
-      workerReadyPromise, pdfDataRangeTransport);
+  transport = new WorkerTransport(workerInitializedPromise, workerReadyPromise);
   workerInitializedPromise.then(function transportInitialized() {
     transport.fetchDocument(params);
   });
@@ -2459,7 +1574,10 @@ var PDFDocumentProxy = (function PDFDocumentProxyClosure() {
      * mapping named destinations to reference numbers.
      */
     getDestinations: function PDFDocumentProxy_getDestinations() {
-      return this.transport.getDestinations();
+      var promise = new PDFJS.Promise();
+      var destinations = this.pdfInfo.destinations;
+      promise.resolve(destinations);
+      return promise;
     },
     /**
      * @return {Promise} A promise that is resolved with an array of all the
@@ -2521,13 +1639,6 @@ var PDFDocumentProxy = (function PDFDocumentProxyClosure() {
       var promise = new PDFJS.Promise();
       this.transport.getData(promise);
       return promise;
-    },
-    /**
-     * @return {Promise} A promise that is resolved when the document's data
-     * is loaded
-     */
-    dataLoaded: function PDFDocumentProxy_dataLoaded() {
-      return this.transport.dataLoaded();
     },
     destroy: function PDFDocumentProxy_destroy() {
       this.transport.destroy();
@@ -2811,10 +1922,7 @@ var PDFPageProxy = (function PDFPageProxyClosure() {
  * For internal use only.
  */
 var WorkerTransport = (function WorkerTransportClosure() {
-  function WorkerTransport(workerInitializedPromise, workerReadyPromise,
-      pdfDataRangeTransport) {
-    this.pdfDataRangeTransport = pdfDataRangeTransport;
-
+  function WorkerTransport(workerInitializedPromise, workerReadyPromise) {
     this.workerReadyPromise = workerReadyPromise;
     this.commonObjs = new PDFObjects();
 
@@ -2868,14 +1976,11 @@ var WorkerTransport = (function WorkerTransportClosure() {
   }
   WorkerTransport.prototype = {
     destroy: function WorkerTransport_destroy() {
+      if (this.worker)
+        this.worker.terminate();
+
       this.pageCache = [];
       this.pagePromises = [];
-      var self = this;
-      this.messageHandler.send('Terminate', null, function () {
-        if (self.worker) {
-          self.worker.terminate();
-        }
-      });
     },
     setupFakeWorker: function WorkerTransport_setupFakeWorker() {
       warn('Setting up fake worker.');
@@ -2898,21 +2003,6 @@ var WorkerTransport = (function WorkerTransportClosure() {
     setupMessageHandler:
       function WorkerTransport_setupMessageHandler(messageHandler) {
       this.messageHandler = messageHandler;
-
-      var pdfDataRangeTransport = this.pdfDataRangeTransport;
-      if (pdfDataRangeTransport) {
-        pdfDataRangeTransport.addListener(function(begin, chunk) {
-          messageHandler.send('OnDataRange', {
-            begin: begin,
-            chunk: chunk
-          });
-        });
-
-        messageHandler.on('RequestDataRange',
-          function transportDataRange(data) {
-            pdfDataRangeTransport.requestDataRange(data.begin, data.end);
-          }, this);
-      }
 
       messageHandler.on('GetDoc', function transportDoc(data) {
         var pdfInfo = data.pdfInfo;
@@ -3017,10 +2107,6 @@ var WorkerTransport = (function WorkerTransportClosure() {
       }, this);
 
       messageHandler.on('DocProgress', function transportDocProgress(data) {
-        // TODO(mack): The progress event should be resolved on a different
-        // promise that tracks progress of whole file, since workerReadyPromise
-        // is for file being ready to render, not for when file is fully
-        // downloaded
         this.workerReadyPromise.progress({
           loaded: data.loaded,
           total: data.total
@@ -3076,26 +2162,13 @@ var WorkerTransport = (function WorkerTransportClosure() {
     },
 
     fetchDocument: function WorkerTransport_fetchDocument(source) {
-      source.disableAutoFetch = PDFJS.disableAutoFetch;
-      source.chunkedViewerLoading = !!this.pdfDataRangeTransport;
-      this.messageHandler.send('GetDocRequest', {
-        source: source,
-        disableRange: PDFJS.disableRange
-      });
+      this.messageHandler.send('GetDocRequest', {source: source});
     },
 
     getData: function WorkerTransport_getData(promise) {
       this.messageHandler.send('GetData', null, function(data) {
         promise.resolve(data);
       });
-    },
-
-    dataLoaded: function WorkerTransport_dataLoaded() {
-      var promise = new PDFJS.Promise();
-      this.messageHandler.send('DataLoaded', null, function(args) {
-        promise.resolve(args);
-      });
-      return promise;
     },
 
     getPage: function WorkerTransport_getPage(pageNumber, promise) {
@@ -3111,16 +2184,6 @@ var WorkerTransport = (function WorkerTransportClosure() {
     getAnnotations: function WorkerTransport_getAnnotations(pageIndex) {
       this.messageHandler.send('GetAnnotationsRequest',
         { pageIndex: pageIndex });
-    },
-
-    getDestinations: function WorkerTransport_getDestinations() {
-      var promise = new PDFJS.Promise();
-      this.messageHandler.send('GetDestinations', null,
-        function transportDestinations(destinations) {
-          promise.resolve(destinations);
-        }
-      );
-      return promise;
     }
   };
   return WorkerTransport;
@@ -4980,21 +4043,11 @@ var RefSet = (function RefSetClosure() {
 })();
 
 var Catalog = (function CatalogClosure() {
-  function Catalog(pdfManager, xref) {
-    this.pdfManager = pdfManager;
+  function Catalog(xref) {
     this.xref = xref;
-    this.catDict = xref.getCatalogObj();
-    assertWellFormed(isDict(this.catDict),
-      'catalog object is not a dictionary');
-
-    // Stores state as we traverse the pages catalog so that we can resume
-    // parsing if an exception is thrown
-    this.traversePagesQueue = [{
-      pagesDict: this.toplevelPagesDict,
-      posInKids: 0
-    }];
-    this.pagePromises = [];
-    this.currPageIndex = 0;
+    var obj = xref.getCatalogObj();
+    assertWellFormed(isDict(obj), 'catalog object is not a dictionary');
+    this.catDict = obj;
   }
 
   Catalog.prototype = {
@@ -5098,6 +4151,27 @@ var Catalog = (function CatalogClosure() {
       // shadow the prototype getter
       return shadow(this, 'num', obj);
     },
+    traverseKids: function Catalog_traverseKids(pagesDict) {
+      var pageCache = this.pageCache;
+      var kids = pagesDict.get('Kids');
+      assertWellFormed(isArray(kids),
+                       'page dictionary kids object is not an array');
+      for (var i = 0, ii = kids.length; i < ii; ++i) {
+        var kid = kids[i];
+        assertWellFormed(isRef(kid),
+                        'page dictionary kid is not a reference');
+        var obj = this.xref.fetch(kid);
+        if (isDict(obj, 'Page') || (isDict(obj) && !obj.has('Kids'))) {
+          pageCache.push(new Page(this.xref, pageCache.length, obj, kid));
+        } else { // must be a child page dictionary
+          assertWellFormed(
+            isDict(obj),
+            'page dictionary kid reference points to wrong type of object'
+          );
+          this.traverseKids(obj);
+        }
+      }
+    },
     get destinations() {
       function fetchDestination(dest) {
         return isDict(dest) ? dest.get('D') : dest;
@@ -5165,54 +4239,13 @@ var Catalog = (function CatalogClosure() {
       }
       return shadow(this, 'javaScript', javaScript);
     },
-
-    getPage: function Catalog_getPage(pageIndex) {
-      if (!(pageIndex in this.pagePromises)) {
-        this.pagePromises[pageIndex] = new Promise();
+    getPage: function Catalog_getPage(n) {
+      var pageCache = this.pageCache;
+      if (!pageCache) {
+        pageCache = this.pageCache = [];
+        this.traverseKids(this.toplevelPagesDict);
       }
-      return this.pagePromises[pageIndex];
-    },
-
-    // Traverses pages in DFS order so that pages are processed in increasing
-    // order
-    traversePages: function Catalog_traversePages() {
-      var queue = this.traversePagesQueue;
-      while (queue.length) {
-        var queueItem = queue[queue.length - 1];
-        var pagesDict = queueItem.pagesDict;
-
-        var kids = pagesDict.get('Kids');
-        assert(isArray(kids), 'page dictionary kids object is not an array');
-        if (queueItem.posInKids >= kids.length) {
-          queue.pop();
-          continue;
-        }
-        var kidRef = kids[queueItem.posInKids];
-        assert(isRef(kidRef), 'page dictionary kid is not a reference');
-
-        var kid = this.xref.fetch(kidRef);
-        if (isDict(kid, 'Page') || (isDict(kid) && !kid.has('Kids'))) {
-          var pageIndex = this.currPageIndex++;
-          var page = new Page(this.pdfManager, this.xref, pageIndex, kid,
-                              kidRef);
-          if (!(pageIndex in this.pagePromises)) {
-            this.pagePromises[pageIndex] = new Promise();
-          }
-          this.pagePromises[pageIndex].resolve(page);
-
-        } else { // must be a child page dictionary
-          assert(
-            isDict(kid),
-            'page dictionary kid reference points to wrong type of object'
-          );
-
-          queue.push({
-            pagesDict: kid,
-            posInKids: 0
-          });
-        }
-        ++queueItem.posInKids;
-      }
+      return this.pageCache[n - 1];
     }
   };
 
@@ -5220,60 +4253,75 @@ var Catalog = (function CatalogClosure() {
 })();
 
 var XRef = (function XRefClosure() {
-  function XRef(stream, password) {
-
+  function XRef(stream, startXRef, mainXRefEntriesOffset, password) {
     this.stream = stream;
     this.entries = [];
     this.xrefstms = {};
+    var trailerDict = this.readXRef(startXRef);
+    trailerDict.assignXref(this);
+    this.trailer = trailerDict;
     // prepare the XRef cache
     this.cache = [];
-    this.password = password;
+
+    var encrypt = trailerDict.get('Encrypt');
+    if (encrypt) {
+      var ids = trailerDict.get('ID');
+      var fileId = (ids && ids.length) ? ids[0] : '';
+      this.encrypt = new CipherTransformFactory(encrypt, fileId, password);
+    }
+
+    // get the root dictionary (catalog) object
+    if (!(this.root = trailerDict.get('Root')))
+      error('Invalid root reference');
   }
 
   XRef.prototype = {
-    setStartXRef: function XRef_setStartXRef(startXRef) {
-      // Store the starting positions of xref tables as we process them
-      // so we can recover from missing data errors
-      this.startXRefQueue = [startXRef];
-    },
+    readXRefTable: function XRef_readXRefTable(parser) {
+      // Example of cross-reference table:
+      // xref
+      // 0 1                    <-- subsection header (first obj #, obj count)
+      // 0000000000 65535 f     <-- actual object (offset, generation #, f/n)
+      // 23 2                   <-- subsection header ... and so on ...
+      // 0000025518 00002 n
+      // 0000025635 00000 n
+      // trailer
+      // ...
 
-    parse: function XRef_parse(recoveryMode) {
-      var trailerDict;
-      if (!recoveryMode) {
-        trailerDict = this.readXRef();
-      } else {
-        warn('Indexing all PDF objects');
-        trailerDict = this.indexObjects();
-      }
-      trailerDict.assignXref(this);
-      this.trailer = trailerDict;
-      var encrypt = trailerDict.get('Encrypt');
-      if (encrypt) {
-        var ids = trailerDict.get('ID');
-        var fileId = (ids && ids.length) ? ids[0] : '';
-        this.encrypt = new CipherTransformFactory(
-            encrypt, fileId, this.password);
+      // Outer loop is over subsection headers
+      var obj;
+      while (!isCmd(obj = parser.getObj(), 'trailer')) {
+        var first = obj,
+            count = parser.getObj();
+
+        if (!isInt(first) || !isInt(count))
+          error('Invalid XRef table: wrong types in subsection header');
+
+        // Inner loop is over objects themselves
+        for (var i = 0; i < count; i++) {
+          var entry = {};
+          entry.offset = parser.getObj();
+          entry.gen = parser.getObj();
+          var type = parser.getObj();
+
+          if (isCmd(type, 'f'))
+            entry.free = true;
+          else if (isCmd(type, 'n'))
+            entry.uncompressed = true;
+
+          // Validate entry obj
+          if (!isInt(entry.offset) || !isInt(entry.gen) ||
+              !(entry.free || entry.uncompressed)) {
+            error('Invalid entry in XRef subsection: ' + first + ', ' + count);
+          }
+
+          if (!this.entries[i + first])
+            this.entries[i + first] = entry;
+        }
       }
 
-      // get the root dictionary (catalog) object
-      if (!(this.root = trailerDict.get('Root'))) {
-        error('Invalid root reference');
-      }
-    },
-
-    processXRefTable: function XRef_processXRefTable(parser) {
-      if (!('tableState' in this)) {
-        // Stores state of the table as we process it so we can resume
-        // from middle of table in case of missing data error
-        this.tableState = {
-          entryNum: 0,
-          streamPos: parser.lexer.stream.pos,
-          parserBuf1: parser.buf1,
-          parserBuf2: parser.buf2
-        };
-      }
-
-      var obj = this.readXRefTable(parser);
+      // Sanity check: as per spec, first object must be free
+      if (this.entries[0] && !this.entries[0].free)
+        error('Invalid XRef table: unexpected first object');
 
       // Sanity check
       if (!isCmd(obj, 'trailer'))
@@ -5292,140 +4340,27 @@ var XRef = (function XRefClosure() {
       if (!isDict(dict))
         error('Invalid XRef table: could not parse trailer dictionary');
 
-      delete this.tableState;
-
       return dict;
     },
-
-    readXRefTable: function XRef_readXRefTable(parser) {
-      // Example of cross-reference table:
-      // xref
-      // 0 1                    <-- subsection header (first obj #, obj count)
-      // 0000000000 65535 f     <-- actual object (offset, generation #, f/n)
-      // 23 2                   <-- subsection header ... and so on ...
-      // 0000025518 00002 n
-      // 0000025635 00000 n
-      // trailer
-      // ...
-
-      var stream = parser.lexer.stream;
-      var tableState = this.tableState;
-      stream.pos = tableState.streamPos;
-      parser.buf1 = tableState.parserBuf1;
-      parser.buf2 = tableState.parserBuf2;
-
-      // Outer loop is over subsection headers
-      var obj;
-
-      while (true) {
-        if (!('firstEntryNum' in tableState) || !('entryCount' in tableState)) {
-          if (isCmd(obj = parser.getObj(), 'trailer')) {
-            break;
-          }
-          tableState.firstEntryNum = obj;
-          tableState.entryCount = parser.getObj();
-        }
-
-        var first = tableState.firstEntryNum;
-        var count = tableState.entryCount;
-        if (!isInt(first) || !isInt(count))
-          error('Invalid XRef table: wrong types in subsection header');
-
-        // Inner loop is over objects themselves
-        for (var i = tableState.entryNum; i < count; i++) {
-          tableState.streamPos = stream.pos;
-          tableState.entryNum = i;
-          tableState.parserBuf1 = parser.buf1;
-          tableState.parserBuf2 = parser.buf2;
-
-          var entry = {};
-          entry.offset = parser.getObj();
-          entry.gen = parser.getObj();
-          var type = parser.getObj();
-
-          if (isCmd(type, 'f'))
-            entry.free = true;
-          else if (isCmd(type, 'n'))
-            entry.uncompressed = true;
-
-          // Validate entry obj
-          if (!isInt(entry.offset) || !isInt(entry.gen) ||
-              !(entry.free || entry.uncompressed)) {
-            console.log(entry.offset, entry.gen, entry.free,
-                entry.uncompressed);
-            error('Invalid entry in XRef subsection: ' + first + ', ' + count);
-          }
-
-          if (!this.entries[i + first])
-            this.entries[i + first] = entry;
-        }
-
-        tableState.entryNum = 0;
-        tableState.streamPos = stream.pos;
-        tableState.parserBuf1 = parser.buf1;
-        tableState.parserBuf2 = parser.buf2;
-        delete tableState.firstEntryNum;
-        delete tableState.entryCount;
-      }
-
-      // Sanity check: as per spec, first object must be free
-      if (this.entries[0] && !this.entries[0].free)
-        error('Invalid XRef table: unexpected first object');
-
-      return obj;
-    },
-
-    processXRefStream: function XRef_processXRefStream(stream) {
-      if (!('streamState' in this)) {
-        // Stores state of the stream as we process it so we can resume
-        // from middle of stream in case of missing data error
-        var streamParameters = stream.parameters;
-        var byteWidths = streamParameters.get('W');
-        var range = streamParameters.get('Index');
-        if (!range) {
-          range = [0, streamParameters.get('Size')];
-        }
-
-        this.streamState = {
-          entryRanges: range,
-          byteWidths: byteWidths,
-          entryNum: 0,
-          streamPos: stream.pos
-        };
-      }
-      this.readXRefStream(stream);
-      delete this.streamState;
-
-      return stream.parameters;
-    },
-
     readXRefStream: function XRef_readXRefStream(stream) {
+      var streamParameters = stream.parameters;
+      var byteWidths = streamParameters.get('W');
+      var range = streamParameters.get('Index');
+      if (!range)
+        range = [0, streamParameters.get('Size')];
       var i, j;
-      var streamState = this.streamState;
-      stream.pos = streamState.streamPos;
-
-      var byteWidths = streamState.byteWidths;
-      var typeFieldWidth = byteWidths[0];
-      var offsetFieldWidth = byteWidths[1];
-      var generationFieldWidth = byteWidths[2];
-
-      var entryRanges = streamState.entryRanges;
-      while (entryRanges.length > 0) {
-
-        var first = entryRanges[0];
-        var n = entryRanges[1];
-
+      while (range.length > 0) {
+        var first = range[0], n = range[1];
         if (!isInt(first) || !isInt(n))
           error('Invalid XRef range fields: ' + first + ', ' + n);
-
+        var typeFieldWidth = byteWidths[0];
+        var offsetFieldWidth = byteWidths[1];
+        var generationFieldWidth = byteWidths[2];
         if (!isInt(typeFieldWidth) || !isInt(offsetFieldWidth) ||
             !isInt(generationFieldWidth)) {
           error('Invalid XRef entry fields length: ' + first + ', ' + n);
         }
-        for (i = streamState.entryNum; i < n; ++i) {
-          streamState.entryNum = i;
-          streamState.streamPos = stream.pos;
-
+        for (i = 0; i < n; ++i) {
           var type = 0, offset = 0, generation = 0;
           for (j = 0; j < typeFieldWidth; ++j)
             type = (type << 8) | stream.getByte();
@@ -5454,11 +4389,9 @@ var XRef = (function XRefClosure() {
           if (!this.entries[first + i])
             this.entries[first + i] = entry;
         }
-
-        streamState.entryNum = 0;
-        streamState.streamPos = stream.pos;
-        entryRanges.splice(0, 2);
+        range.splice(0, 2);
       }
+      return streamParameters;
     },
     indexObjects: function XRef_indexObjects() {
       // Simple scan through the PDF content to find objects,
@@ -5546,8 +4479,7 @@ var XRef = (function XRefClosure() {
       }
       // reading XRef streams
       for (var i = 0, ii = xrefStms.length; i < ii; ++i) {
-        this.startXRefQueue.push(xrefStms[i]);
-        this.readXRef(/* recoveryMode */ true);
+          this.readXRef(xrefStms[i], true);
       }
       // finding main trailer
       var dict;
@@ -5571,84 +4503,64 @@ var XRef = (function XRefClosure() {
       // calling error() would reject worker with an UnknownErrorException.
       throw new InvalidPDFException('Invalid PDF structure');
     },
-
-    readXRef: function XRef_readXRef(recoveryMode) {
+    readXRef: function XRef_readXRef(startXRef, recoveryMode) {
       var stream = this.stream;
+      stream.pos = startXRef;
 
       try {
-        while (this.startXRefQueue.length) {
-          var startXRef = this.startXRefQueue[0];
+        var parser = new Parser(new Lexer(stream), true, null);
+        var obj = parser.getObj();
+        var dict;
 
-          stream.pos = startXRef;
+        // Get dictionary
+        if (isCmd(obj, 'xref')) {
+          // Parse end-of-file XRef
+          dict = this.readXRefTable(parser);
 
-          var parser = new Parser(new Lexer(stream), true, null);
-          var obj = parser.getObj();
-          var dict;
-
-          // Get dictionary
-          if (isCmd(obj, 'xref')) {
-
-            // Parse end-of-file XRef
-            dict = this.processXRefTable(parser);
-            if (!this.topDict) {
-              this.topDict = dict;
-            }
-
-            // Recursively get other XRefs 'XRefStm', if any
-            obj = dict.get('XRefStm');
-            if (isInt(obj)) {
-              var pos = obj;
-              // ignore previously loaded xref streams
-              // (possible infinite recursion)
-              if (!(pos in this.xrefstms)) {
-                this.xrefstms[pos] = 1;
-                this.startXRefQueue.push(pos);
-              }
-            }
-          } else if (isInt(obj)) {
-
-            // Parse in-stream XRef
-            if (!isInt(parser.getObj()) ||
-                !isCmd(parser.getObj(), 'obj') ||
-                !isStream(obj = parser.getObj())) {
-              error('Invalid XRef stream');
-            }
-            dict = this.processXRefStream(obj);
-            if (!this.topDict) {
-              this.topDict = dict;
-            }
-
-            if (!dict)
-              error('Failed to read XRef stream');
-          }
-
-          // Recursively get previous dictionary, if any
-          obj = dict.get('Prev');
+          // Recursively get other XRefs 'XRefStm', if any
+          obj = dict.get('XRefStm');
           if (isInt(obj)) {
-            this.startXRefQueue.push(obj);
-          } else if (isRef(obj)) {
-            // The spec says Prev must not be a reference, i.e. "/Prev NNN"
-            // This is a fallback for non-compliant PDFs, i.e. "/Prev NNN 0 R"
-            this.startXRefQueue.push(obj.num);
+            var pos = obj;
+            // ignore previously loaded xref streams
+            // (possible infinite recursion)
+            if (!(pos in this.xrefstms)) {
+              this.xrefstms[pos] = 1;
+              this.readXRef(pos);
+            }
           }
-
-          this.startXRefQueue.shift();
+        } else if (isInt(obj)) {
+          // Parse in-stream XRef
+          if (!isInt(parser.getObj()) ||
+              !isCmd(parser.getObj(), 'obj') ||
+              !isStream(obj = parser.getObj())) {
+            error('Invalid XRef stream');
+          }
+          dict = this.readXRefStream(obj);
+          if (!dict)
+            error('Failed to read XRef stream');
         }
 
-        return this.topDict;
+        // Recursively get previous dictionary, if any
+        obj = dict.get('Prev');
+        if (isInt(obj))
+          this.readXRef(obj, recoveryMode);
+        else if (isRef(obj)) {
+          // The spec says Prev must not be a reference, i.e. "/Prev NNN"
+          // This is a fallback for non-compliant PDFs, i.e. "/Prev NNN 0 R"
+          this.readXRef(obj.num, recoveryMode);
+        }
+
+        return dict;
       } catch (e) {
-        if (e instanceof MissingDataException) {
-          throw e;
-        }
-
         log('(while reading XRef): ' + e);
       }
 
       if (recoveryMode)
         return;
-      throw new XRefParseException();
-    },
 
+      warn('Indexing all PDF objects');
+      return this.indexObjects();
+    },
     getEntry: function XRef_getEntry(i) {
       var e = this.entries[i];
       if (e === null)
@@ -5663,16 +4575,10 @@ var XRef = (function XRefClosure() {
     fetch: function XRef_fetch(ref, suppressEncryption) {
       assertWellFormed(isRef(ref), 'ref object is not a reference');
       var num = ref.num;
-      var e;
-      if (num in this.cache) {
-        e = this.cache[num];
-        if (e instanceof Stream) {
-          return e.makeSubStream(e.start, e.length, e.dict);
-        }
-        return e;
-      }
+      if (num in this.cache)
+        return this.cache[num];
 
-      e = this.getEntry(num);
+      var e = this.getEntry(num);
 
       // the referenced entry can be free
       if (e === null)
@@ -5714,16 +4620,9 @@ var XRef = (function XRefClosure() {
         } else {
           e = parser.getObj();
         }
-        if (!isStream(e) || e instanceof JpegStream) {
+        // Don't cache streams since they are mutable (except images).
+        if (!isStream(e) || e instanceof JpegStream)
           this.cache[num] = e;
-        } else if (e instanceof Stream) {
-          e = e.makeSubStream(e.start, e.length, e.dict);
-          this.cache[num] = e;
-        } else if ('readBlock' in e) {
-          e.getBytes();
-          e = e.makeSubStream(0, e.bufferLength, e.dict);
-          this.cache[num] = e;
-        }
         return e;
       }
 
@@ -15239,17 +14138,16 @@ var CipherTransformFactory = (function CipherTransformFactoryClosure() {
 
 
 var PartialEvaluator = (function PartialEvaluatorClosure() {
-  function PartialEvaluator(pdfManager, xref, handler, pageIndex,
-                            uniquePrefix, idCounters) {
+  function PartialEvaluator(xref, handler, pageIndex, uniquePrefix) {
     this.state = new EvalState();
     this.stateStack = [];
 
-    this.pdfManager = pdfManager;
     this.xref = xref;
     this.handler = handler;
     this.pageIndex = pageIndex;
     this.uniquePrefix = uniquePrefix;
-    this.idCounters = idCounters;
+    this.objIdCounter = 0;
+    this.fontIdCounter = 0;
   }
 
   // Specifies properties for each command
@@ -15364,201 +14262,90 @@ var PartialEvaluator = (function PartialEvaluatorClosure() {
     'null': null
   };
 
-  var TILING_PATTERN = 1, SHADING_PATTERN = 2;
-
-  function createOperatorList(fnArray, argsArray, dependencies) {
-    return {
-      queue: {
-        fnArray: fnArray || [],
-        argsArray: argsArray || []
-      },
-      dependencies: dependencies || {}
-    };
-  }
-
   PartialEvaluator.prototype = {
+    loadFont: function PartialEvaluator_loadFont(fontName, font, xref,
+                                                 resources, dependency) {
+      var fontRes = resources.get('Font');
 
-    buildFormXObject: function PartialEvaluator_buildFormXObject(resources,
-                                                                 xobj, smask) {
-      var self = this;
-      var promise = new Promise();
-      var fnArray = [];
-      var argsArray = [];
+      assert(fontRes, 'fontRes not available');
 
-      var matrix = xobj.dict.get('Matrix');
-      var bbox = xobj.dict.get('BBox');
-      var group = xobj.dict.get('Group');
-      if (group) {
-        var groupOptions = {
-          matrix: matrix,
-          bbox: bbox,
-          smask: !!smask,
-          isolated: false,
-          knockout: false
+      ++this.fontIdCounter;
+
+      font = xref.fetchIfRef(font) || fontRes.get(fontName);
+      if (!isDict(font)) {
+        return {
+          translated: new ErrorFont('Font ' + fontName + ' is not available'),
+          loadedName: 'g_font_' + this.uniquePrefix + this.fontIdCounter
         };
-
-        var groupSubtype = group.get('S');
-        if (isName(groupSubtype) && groupSubtype.name === 'Transparency') {
-          groupOptions.isolated = group.get('I') || false;
-          groupOptions.knockout = group.get('K') || false;
-          // There is also a group colorspace, but since we put everything in
-          // RGB I'm not sure we need it.
-        }
-        fnArray.push('beginGroup');
-        argsArray.push([groupOptions]);
       }
 
-      fnArray.push('paintFormXObjectBegin');
-      argsArray.push([matrix, bbox]);
+      var loadedName = font.loadedName;
+      if (!loadedName) {
+        // keep track of each font we translated so the caller can
+        // load them asynchronously before calling display on a page
+        loadedName = 'g_font_' + this.uniquePrefix + this.fontIdCounter;
+        font.loadedName = loadedName;
 
-      // Pass in the current `queue` object. That means the `fnArray`
-      // and the `argsArray` in this scope is reused and new commands
-      // are added to them.
-      var opListPromise = this.getOperatorList(xobj,
-          xobj.dict.get('Resources') || resources);
-      opListPromise.then(function(data) {
-        var queue = data.queue;
-        var dependencies = data.dependencies;
-        Util.prependToArray(queue.fnArray, fnArray);
-        Util.prependToArray(queue.argsArray, argsArray);
-        self.insertDependencies(queue, dependencies);
-
-        queue.fnArray.push('paintFormXObjectEnd');
-        queue.argsArray.push([]);
-
-        if (group) {
-          queue.fnArray.push('endGroup');
-          queue.argsArray.push([groupOptions]);
+        var translated;
+        try {
+          translated = this.translateFont(font, xref, resources,
+                                          dependency);
+        } catch (e) {
+          translated = new ErrorFont(e instanceof Error ? e.message : e);
         }
+        font.translated = translated;
 
-        promise.resolve({
-          queue: queue,
-          dependencies: dependencies
-        });
-      });
+        var data = translated;
+        if (data.loadCharProcs) {
+          delete data.loadCharProcs;
 
-      return promise;
+          var charProcs = font.get('CharProcs').getAll();
+          var fontResources = font.get('Resources') || resources;
+          var charProcOperatorList = {};
+          for (var key in charProcs) {
+            var glyphStream = charProcs[key];
+            charProcOperatorList[key] =
+              this.getOperatorList(glyphStream, fontResources, dependency);
+          }
+          data.charProcOperatorList = charProcOperatorList;
+        }
+      }
+      return font;
     },
 
-    buildPaintImageXObject: function PartialEvaluator_buildPaintImageXObject(
-                                resources, image, inline) {
+    getOperatorList: function PartialEvaluator_getOperatorList(stream,
+                                                               resources,
+                                                               dependency,
+                                                               queue) {
+
       var self = this;
-      var dict = image.dict;
-      var w = dict.get('Width', 'W');
-      var h = dict.get('Height', 'H');
-
-      var dependencies = {};
-      var retData = {
-        dependencies: dependencies
-      };
-
-      var imageMask = dict.get('ImageMask', 'IM') || false;
-      if (imageMask) {
-        // This depends on a tmpCanvas beeing filled with the
-        // current fillStyle, such that processing the pixel
-        // data can't be done here. Instead of creating a
-        // complete PDFImage, only read the information needed
-        // for later.
-
-        var width = dict.get('Width', 'W');
-        var height = dict.get('Height', 'H');
-        var bitStrideLength = (width + 7) >> 3;
-        var imgArray = image.getBytes(bitStrideLength * height);
-        var decode = dict.get('Decode', 'D');
-        var inverseDecode = !!decode && decode[0] > 0;
-
-        retData.fn = 'paintImageMaskXObject';
-        retData.args = [imgArray, inverseDecode, width, height];
-        return retData;
-      }
-
-      var softMask = dict.get('SMask', 'SM') || false;
-      var mask = dict.get('Mask') || false;
-
-      var SMALL_IMAGE_DIMENSIONS = 200;
-      // Inlining small images into the queue as RGB data
-      if (inline && !softMask && !mask &&
-          !(image instanceof JpegStream) &&
-          (w + h) < SMALL_IMAGE_DIMENSIONS) {
-        var imageObj = new PDFImage(this.xref, resources, image,
-                                    inline, null, null);
-        var imgData = imageObj.getImageData();
-        retData.fn = 'paintInlineImageXObject';
-        retData.args = [imgData];
-        return retData;
-      }
-
-      // If there is no imageMask, create the PDFImage and a lot
-      // of image processing can be done here.
+      var xref = this.xref;
+      var handler = this.handler;
+      var pageIndex = this.pageIndex;
       var uniquePrefix = this.uniquePrefix || '';
-      var objId = 'img_' + uniquePrefix + (++this.idCounters.obj);
-      dependencies[objId] = true;
-      retData.args = [objId, w, h];
 
-      if (!softMask && !mask && image instanceof JpegStream &&
-          image.isNativelySupported(this.xref, resources)) {
-        // These JPEGs don't need any more processing so we can just send it.
-        retData.fn = 'paintJpegXObject';
-        this.handler.send(
-            'obj', [objId, this.pageIndex, 'JpegStream', image.getIR()]);
-        return retData;
+      function insertDependency(depList) {
+        fnArray.push('dependency');
+        argsArray.push(depList);
+        for (var i = 0, ii = depList.length; i < ii; i++) {
+          var dep = depList[i];
+          if (dependency.indexOf(dep) == -1) {
+            dependency.push(depList[i]);
+          }
+        }
       }
 
-      retData.fn = 'paintImageXObject';
+      function handleSetFont(fontName, font) {
+        font = self.loadFont(fontName, font, xref, resources, dependency);
 
-      PDFImage.buildImage(function(imageObj) {
-          var imgData = imageObj.getImageData();
-          self.handler.send('obj', [objId, self.pageIndex, 'Image', imgData]);
-        }, self.handler, self.xref, resources, image, inline);
-
-      return retData;
-    },
-
-    handleTilingType: function PartialEvaluator_handleTilingType(
-                          fn, args, resources, pattern, patternDict) {
-      var self = this;
-      // Create an IR of the pattern code.
-      var promise = new Promise();
-      var opListPromise = this.getOperatorList(pattern,
-          patternDict.get('Resources') || resources);
-      opListPromise.then(function(data) {
-        var opListData = createOperatorList([], [], data.dependencies);
-        var queue = opListData.queue;
-
-        // Add the dependencies that are required to execute the
-        // operatorList.
-        self.insertDependencies(queue, data.dependencies);
-        queue.fnArray.push(fn);
-        queue.argsArray.push(
-          TilingPattern.getIR(data.queue, patternDict, args));
-        promise.resolve(opListData);
-      });
-
-      return promise;
-    },
-
-    handleSetFont: function PartialEvaluator_handleSetFont(
-                      resources, fontArgs, font) {
-
-      var promise = new Promise();
-      // TODO(mack): Not needed?
-      var fontName;
-      if (fontArgs) {
-        fontArgs = fontArgs.slice();
-        fontName = fontArgs[0].name;
-      }
-      var self = this;
-      var fontPromise = this.loadFont(fontName, font, this.xref, resources);
-      fontPromise.then(function(data) {
-        var font = data.font;
         var loadedName = font.loadedName;
         if (!font.sent) {
-          var fontData = font.translated.exportData();
+          var data = font.translated.exportData();
 
-          self.handler.send('commonobj', [
-            loadedName,
-            'Font',
-            fontData
+          handler.send('commonobj', [
+              loadedName,
+              'Font',
+              data
           ]);
           font.sent = true;
         }
@@ -15567,253 +14354,138 @@ var PartialEvaluator = (function PartialEvaluatorClosure() {
         // and later on used for drawing.
         // OPTIMIZE: This should get insert to the operatorList only once per
         // page.
-        var fnArray = [];
-        var argsArray = [];
-        var queue = {
-          fnArray: fnArray,
-          argsArray: argsArray
+        insertDependency([loadedName]);
+        return loadedName;
+      }
+
+      function buildFormXObject(xobj, smask) {
+        var matrix = xobj.dict.get('Matrix');
+        var bbox = xobj.dict.get('BBox');
+        var group = xobj.dict.get('Group');
+        if (group) {
+          var groupOptions = {
+            matrix: matrix,
+            bbox: bbox,
+            smask: !!smask,
+            isolated: false,
+            knockout: false
+          };
+
+          var groupSubtype = group.get('S');
+          if (isName(groupSubtype) && groupSubtype.name === 'Transparency') {
+            groupOptions.isolated = group.get('I') || false;
+            groupOptions.knockout = group.get('K') || false;
+            // There is also a group colorspace, but since we put everything in
+            // RGB I'm not sure we need it.
+          }
+          fnArray.push('beginGroup');
+          argsArray.push([groupOptions]);
+        }
+
+        fnArray.push('paintFormXObjectBegin');
+        argsArray.push([matrix, bbox]);
+
+        // This adds the operatorList of the xObj to the current queue.
+        var depIdx = dependencyArray.length;
+
+        // Pass in the current `queue` object. That means the `fnArray`
+        // and the `argsArray` in this scope is reused and new commands
+        // are added to them.
+        self.getOperatorList(xobj,
+            xobj.dict.get('Resources') || resources,
+            dependencyArray, queue);
+
+        // Add the dependencies that are required to execute the
+        // operatorList.
+        insertDependency(dependencyArray.slice(depIdx));
+
+        fnArray.push('paintFormXObjectEnd');
+        argsArray.push([]);
+
+        if (group) {
+          fnArray.push('endGroup');
+          argsArray.push([groupOptions]);
+        }
+      }
+
+      function buildPaintImageXObject(image, inline) {
+        var dict = image.dict;
+        var w = dict.get('Width', 'W');
+        var h = dict.get('Height', 'H');
+
+        var imageMask = dict.get('ImageMask', 'IM') || false;
+        if (imageMask) {
+          // This depends on a tmpCanvas beeing filled with the
+          // current fillStyle, such that processing the pixel
+          // data can't be done here. Instead of creating a
+          // complete PDFImage, only read the information needed
+          // for later.
+
+          var width = dict.get('Width', 'W');
+          var height = dict.get('Height', 'H');
+          var bitStrideLength = (width + 7) >> 3;
+          var imgArray = image.getBytes(bitStrideLength * height);
+          var decode = dict.get('Decode', 'D');
+          var inverseDecode = !!decode && decode[0] > 0;
+
+          fn = 'paintImageMaskXObject';
+          args = [imgArray, inverseDecode, width, height];
+          return;
+        }
+
+        var softMask = dict.get('SMask', 'SM') || false;
+        var mask = dict.get('Mask') || false;
+
+        var SMALL_IMAGE_DIMENSIONS = 200;
+        // Inlining small images into the queue as RGB data
+        if (inline && !softMask && !mask &&
+            !(image instanceof JpegStream) &&
+            (w + h) < SMALL_IMAGE_DIMENSIONS) {
+          var imageObj = new PDFImage(xref, resources, image,
+                                      inline, null, null);
+          var imgData = imageObj.getImageData();
+          fn = 'paintInlineImageXObject';
+          args = [imgData];
+          return;
+        }
+
+        // If there is no imageMask, create the PDFImage and a lot
+        // of image processing can be done here.
+        var objId = 'img_' + uniquePrefix + (++self.objIdCounter);
+        insertDependency([objId]);
+        args = [objId, w, h];
+
+        if (!softMask && !mask && image instanceof JpegStream &&
+            image.isNativelySupported(xref, resources)) {
+          // These JPEGs don't need any more processing so we can just send it.
+          fn = 'paintJpegXObject';
+          handler.send('obj', [objId, pageIndex, 'JpegStream', image.getIR()]);
+          return;
+        }
+
+        fn = 'paintImageXObject';
+
+        PDFImage.buildImage(function(imageObj) {
+            var imgData = imageObj.getImageData();
+            handler.send('obj', [objId, pageIndex, 'Image', imgData]);
+          }, handler, xref, resources, image, inline);
+      }
+
+      if (!queue) {
+        queue = {
+          transparency: false
         };
-        var dependencies = data.dependencies;
-        dependencies[loadedName] = true;
-        self.insertDependencies(queue, dependencies);
-        if (fontArgs) {
-          fontArgs[0] = loadedName;
-          fnArray.push('setFont');
-          argsArray.push(fontArgs);
-        }
-        promise.resolve({
-          loadedName: loadedName,
-          queue: queue,
-          dependencies: dependencies
-        });
-      });
-      return promise;
-    },
-
-    insertDependencies: function PartialEvaluator_insertDependencies(
-                            queue, dependencies) {
-
-      var fnArray = queue.fnArray;
-      var argsArray = queue.argsArray;
-      var depList = Object.keys(dependencies);
-      if (depList.length) {
-        fnArray.push('dependency');
-        argsArray.push(depList);
-      }
-    },
-
-    setGState: function PartialEvaluator_setGState(resources, gState) {
-
-      var self = this;
-      var opListData = createOperatorList();
-      var queue = opListData.queue;
-      var fnArray = queue.fnArray;
-      var argsArray = queue.argsArray;
-      var dependencies = opListData.dependencies;
-
-      // TODO(mack): This should be rewritten so that this function returns
-      // what should be added to the queue during each iteration
-      function setGStateForKey(gStateObj, key, value) {
-        switch (key) {
-          case 'Type':
-            break;
-          case 'LW':
-          case 'LC':
-          case 'LJ':
-          case 'ML':
-          case 'D':
-          case 'RI':
-          case 'FL':
-          case 'CA':
-          case 'ca':
-            gStateObj.push([key, value]);
-            break;
-          case 'Font':
-            var promise = new Promise();
-            self.handleSetFont(resources, null, value[0]).then(function(data) {
-              var gState = ['Font', data.loadedName, value[1]];
-              promise.resolve({
-                gState: gState,
-                queue: data.queue,
-                dependencies: data.dependencies
-              });
-            });
-            gStateObj.push(['promise', promise]);
-            break;
-          case 'BM':
-            if (!isName(value) || value.name !== 'Normal') {
-              queue.transparency = true;
-            }
-            gStateObj.push([key, value]);
-            break;
-          case 'SMask':
-            // We support the default so don't trigger the TODO.
-            if (!isName(value) || value.name != 'None')
-              TODO('graphic state operator ' + key);
-            break;
-          // Only generate info log messages for the following since
-          // they are unlikey to have a big impact on the rendering.
-          case 'OP':
-          case 'op':
-          case 'OPM':
-          case 'BG':
-          case 'BG2':
-          case 'UCR':
-          case 'UCR2':
-          case 'TR':
-          case 'TR2':
-          case 'HT':
-          case 'SM':
-          case 'SA':
-          case 'AIS':
-          case 'TK':
-            // TODO implement these operators.
-            info('graphic state operator ' + key);
-            break;
-          default:
-            info('Unknown graphic state operator ' + key);
-            break;
-        }
       }
 
-      // This array holds the converted/processed state data.
-      var gStateObj = [];
-      var gStateMap = gState.map;
-      for (var key in gStateMap) {
-        var value = gStateMap[key];
-        setGStateForKey(gStateObj, key, value);
+      if (!queue.argsArray) {
+        queue.argsArray = [];
+      }
+      if (!queue.fnArray) {
+        queue.fnArray = [];
       }
 
-      var promises = [];
-      var indices = [];
-      for (var i = 0, n = gStateObj.length; i < n; ++i) {
-        var value = gStateObj[i];
-        if (value[0] === 'promise') {
-          promises.push(value[1]);
-          indices.push(i);
-        }
-      }
-
-      var promise = new Promise();
-      Promise.all(promises).then(function(datas) {
-        for (var i = 0, n = datas.length; i < n; ++i) {
-          var data = datas[i];
-          var index = indices[i];
-          gStateObj[index] = data.gState;
-          var subQueue = data.queue;
-          Util.concatenateToArray(fnArray, subQueue.fnArray);
-          Util.concatenateToArray(argsArray, subQueue.argsArray);
-          queue.transparency = subQueue.transparency || queue.transparency;
-          Util.extendObj(dependencies, data.dependencies);
-        }
-        fnArray.push('setGState');
-        argsArray.push([gStateObj]);
-        promise.resolve(opListData);
-      });
-
-      return promise;
-    },
-
-    loadFont: function PartialEvaluator_loadFont(fontName, font, xref,
-                                                 resources) {
-      var promise = new Promise();
-
-      var fontRes = resources.get('Font');
-
-      assert(fontRes, 'fontRes not available');
-
-      font = xref.fetchIfRef(font) || fontRes.get(fontName);
-      if (!isDict(font)) {
-        ++this.idCounters.font;
-        promise.resolve({
-          font: {
-            translated: new ErrorFont('Font ' + fontName + ' is not available'),
-            loadedName: 'g_font_' + this.uniquePrefix + this.idCounters.obj
-          },
-          dependencies: {}
-        });
-        return promise;
-      }
-
-      var loadedName = font.loadedName;
-      if (!loadedName) {
-        // keep track of each font we translated so the caller can
-        // load them asynchronously before calling display on a page
-        loadedName = 'g_font_' + this.uniquePrefix + (this.idCounters.font + 1);
-        font.loadedName = loadedName;
-
-        var translated;
-        try {
-          translated = this.translateFont(font, xref);
-        } catch (e) {
-          if (e instanceof MissingDataException) {
-            font.loadedName = null;
-            throw e;
-          }
-          translated = new ErrorFont(e instanceof Error ? e.message : e);
-        }
-        font.translated = translated;
-
-        if (translated.loadCharProcs) {
-          delete translated.loadCharProcs;
-
-          var charProcs = font.get('CharProcs').getAll();
-          var fontResources = font.get('Resources') || resources;
-          var opListPromises = [];
-          var charProcKeys = Object.keys(charProcs);
-          for (var i = 0, n = charProcKeys.length; i < n; ++i) {
-            var key = charProcKeys[i];
-            var glyphStream = charProcs[key];
-            opListPromises.push(
-              this.getOperatorList(glyphStream, fontResources));
-          }
-          Promise.all(opListPromises).then(function(datas) {
-            var charProcOperatorList = {};
-            var dependencies = {};
-            for (var i = 0, n = charProcKeys.length; i < n; ++i) {
-              var key = charProcKeys[i];
-              var data = datas[i];
-              charProcOperatorList[key] = data.queue;
-              Util.extendObj(dependencies, data.dependencies);
-            }
-            translated.charProcOperatorList = charProcOperatorList;
-            promise.resolve({
-              font: font,
-              dependencies: dependencies
-            });
-          });
-        } else {
-          promise.resolve({
-            font: font,
-            dependencies: {}
-          });
-        }
-
-        ++this.idCounters.font;
-      } else {
-        promise.resolve({
-          font: font,
-          dependencies: {}
-        });
-      }
-      return promise;
-    },
-
-    getOperatorList: function PartialEvaluator_getOperatorList(stream,
-                                                               resources) {
-
-      var self = this;
-      var xref = this.xref;
-      var handler = this.handler;
-
-      var fnArray = [];
-      var argsArray = [];
-      var queue = {
-        transparency: false,
-        fnArray: fnArray,
-        argsArray: argsArray
-      };
-      var dependencies = {};
+      var fnArray = queue.fnArray, argsArray = queue.argsArray;
+      var dependencyArray = dependency || [];
 
       resources = resources || new Dict();
       var xobjs = resources.get('XObject') || new Dict();
@@ -15821,232 +14493,222 @@ var PartialEvaluator = (function PartialEvaluatorClosure() {
       // TODO(mduan): pass array of knownCommands rather than OP_MAP
       // dictionary
       var parser = new Parser(new Lexer(stream, OP_MAP), false, xref);
+      var res = resources;
+      var args = [], obj;
+      var TILING_PATTERN = 1, SHADING_PATTERN = 2;
 
-      var promise = new Promise();
-      function parseCommands() {
-        try {
-          parser.restoreState();
-          var args = [];
-          while (true) {
+      while (true) {
+        obj = parser.getObj();
+        if (isEOF(obj)) {
+          break;
+        }
 
-            var obj = parser.getObj();
+        if (isCmd(obj)) {
+          var cmd = obj.cmd;
 
-            if (isEOF(obj)) {
-              break;
+          // Check that the command is valid
+          var opSpec = OP_MAP[cmd];
+          if (!opSpec) {
+            warn('Unknown command "' + cmd + '"');
+            continue;
+          }
+
+          var fn = opSpec.fnName;
+
+          // Validate the number of arguments for the command
+          if (opSpec.variableArgs) {
+            if (args.length > opSpec.numArgs) {
+              info('Command ' + fn + ': expected [0,' + opSpec.numArgs +
+                  '] args, but received ' + args.length + ' args');
             }
-
-            if (isCmd(obj)) {
-              var cmd = obj.cmd;
-
-              // Check that the command is valid
-              var opSpec = OP_MAP[cmd];
-              if (!opSpec) {
-                warn('Unknown command "' + cmd + '"');
-                continue;
-              }
-
-              var fn = opSpec.fnName;
-
-              // Validate the number of arguments for the command
-              if (opSpec.variableArgs) {
-                if (args.length > opSpec.numArgs) {
-                  info('Command ' + fn + ': expected [0,' + opSpec.numArgs +
-                      '] args, but received ' + args.length + ' args');
-                }
-              } else {
-                if (args.length < opSpec.numArgs) {
-                  // If we receive too few args, it's not possible to possible
-                  // to execute the command, so skip the command
-                  info('Command ' + fn + ': because expected ' +
-                       opSpec.numArgs + ' args, but received ' + args.length +
-                       ' args; skipping');
-                  args = [];
-                  continue;
-                } else if (args.length > opSpec.numArgs) {
-                  info('Command ' + fn + ': expected ' + opSpec.numArgs +
-                      ' args, but received ' + args.length + ' args');
-                }
-              }
-
-              // TODO figure out how to type-check vararg functions
-
-              if ((cmd == 'SCN' || cmd == 'scn') &&
-                   !args[args.length - 1].code) {
-                // compile tiling patterns
-                var patternName = args[args.length - 1];
-                // SCN/scn applies patterns along with normal colors
-                var pattern;
-                if (isName(patternName) &&
-                    (pattern = patterns.get(patternName.name))) {
-
-                  var dict = isStream(pattern) ? pattern.dict : pattern;
-                  var typeNum = dict.get('PatternType');
-
-                  if (typeNum == TILING_PATTERN) {
-                    var patternPromise = self.handleTilingType(
-                        fn, args, resources, pattern, dict);
-                    fn = 'promise';
-                    args = [patternPromise];
-                  } else if (typeNum == SHADING_PATTERN) {
-                    var shading = dict.get('Shading');
-                    var matrix = dict.get('Matrix');
-                    var pattern = Pattern.parseShading(shading, matrix, xref,
-                                                        resources);
-                    args = pattern.getIR();
-                  } else {
-                    error('Unkown PatternType ' + typeNum);
-                  }
-                }
-              } else if (cmd == 'Do' && !args[0].code) {
-                // eagerly compile XForm objects
-                var name = args[0].name;
-                var xobj = xobjs.get(name);
-                if (xobj) {
-                  assertWellFormed(
-                      isStream(xobj), 'XObject should be a stream');
-
-                  var type = xobj.dict.get('Subtype');
-                  assertWellFormed(
-                    isName(type),
-                    'XObject should have a Name subtype'
-                  );
-
-                  if ('Form' == type.name) {
-                    fn = 'promise';
-                    args = [self.buildFormXObject(resources, xobj)];
-                  } else if ('Image' == type.name) {
-                    var data = self.buildPaintImageXObject(
-                        resources, xobj, false);
-                    Util.extendObj(dependencies, data.dependencies);
-                    self.insertDependencies(queue, data.dependencies);
-                    fn = data.fn;
-                    args = data.args;
-                  } else {
-                    error('Unhandled XObject subtype ' + type.name);
-                  }
-                }
-              } else if (cmd == 'Tf') { // eagerly collect all fonts
-                fn = 'promise';
-                args = [self.handleSetFont(resources, args)];
-              } else if (cmd == 'EI') {
-                var data = self.buildPaintImageXObject(
-                    resources, args[0], true);
-                Util.extendObj(dependencies, data.dependencies);
-                self.insertDependencies(queue, data.dependencies);
-                fn = data.fn;
-                args = data.args;
-              }
-
-              switch (fn) {
-                // Parse the ColorSpace data to a raw format.
-                case 'setFillColorSpace':
-                case 'setStrokeColorSpace':
-                  args = [ColorSpace.parseToIR(args[0], xref, resources)];
-                  break;
-                case 'shadingFill':
-                  var shadingRes = resources.get('Shading');
-                  if (!shadingRes)
-                    error('No shading resource found');
-
-                  var shading = shadingRes.get(args[0].name);
-                  if (!shading)
-                    error('No shading object found');
-
-                  var shadingFill = Pattern.parseShading(
-                      shading, null, xref, resources);
-                  var patternIR = shadingFill.getIR();
-                  args = [patternIR];
-                  fn = 'shadingFill';
-                  break;
-                case 'setGState':
-                  var dictName = args[0];
-                  var extGState = resources.get('ExtGState');
-
-                  if (!isDict(extGState) || !extGState.has(dictName.name))
-                    break;
-
-                  var gState = extGState.get(dictName.name);
-                  fn = 'promise';
-                  args = [self.setGState(resources, gState)];
-              } // switch
-
-              fnArray.push(fn);
-              argsArray.push(args);
+          } else {
+            if (args.length < opSpec.numArgs) {
+              // If we receive too few args, it's not possible to possible
+              // to execute the command, so skip the command
+              info('Command ' + fn + ': because expected ' + opSpec.numArgs +
+                  ' args, but received ' + args.length + ' args; skipping');
               args = [];
-              parser.saveState();
-            } else if (obj !== null && obj !== undefined) {
-              args.push(obj instanceof Dict ? obj.getAll() : obj);
-              assertWellFormed(args.length <= 33, 'Too many arguments');
+              continue;
+            } else if (args.length > opSpec.numArgs) {
+              info('Command ' + fn + ': expected ' + opSpec.numArgs +
+                  ' args, but received ' + args.length + ' args');
             }
           }
 
-          var subQueuePromises = [];
-          for (var i = 0; i < fnArray.length; ++i) {
-            if (fnArray[i] === 'promise') {
-              subQueuePromises.push(argsArray[i][0]);
-            }
-          }
-          Promise.all(subQueuePromises).then(function(datas) {
-            // TODO(mack): Optimize by using repositioning elements
-            // in original queue rather than creating new queue
+          // TODO figure out how to type-check vararg functions
 
-            for (var i = 0, n = datas.length; i < n; ++i) {
-              var data = datas[i];
-              var subQueue = data.queue;
-              queue.transparency = subQueue.transparency || queue.transparency;
-              Util.extendObj(dependencies, data.dependencies);
-            }
+          if ((cmd == 'SCN' || cmd == 'scn') && !args[args.length - 1].code) {
+            // compile tiling patterns
+            var patternName = args[args.length - 1];
+            // SCN/scn applies patterns along with normal colors
+            if (isName(patternName)) {
+              var pattern = patterns.get(patternName.name);
+              if (pattern) {
+                var dict = isStream(pattern) ? pattern.dict : pattern;
+                var typeNum = dict.get('PatternType');
 
-            var newFnArray = [];
-            var newArgsArray = [];
-            var currOffset = 0;
-            var subQueueIdx = 0;
-            for (var i = 0, n = fnArray.length; i < n; ++i) {
-              var offset = i + currOffset;
-              if (fnArray[i] === 'promise') {
-                var data = datas[subQueueIdx++];
-                var subQueue = data.queue;
-                var subQueueFnArray = subQueue.fnArray;
-                var subQueueArgsArray = subQueue.argsArray;
-                for (var j = 0, nn = subQueueFnArray.length; j < nn; ++j) {
-                  newFnArray[offset + j] = subQueueFnArray[j];
-                  newArgsArray[offset + j] = subQueueArgsArray[j];
+                if (typeNum == TILING_PATTERN) {
+                  // Create an IR of the pattern code.
+                  var depIdx = dependencyArray.length;
+                  var operatorList = this.getOperatorList(pattern,
+                      dict.get('Resources') || resources, dependencyArray);
+
+                  // Add the dependencies that are required to execute the
+                  // operatorList.
+                  insertDependency(dependencyArray.slice(depIdx));
+
+                  args = TilingPattern.getIR(operatorList, dict, args);
                 }
-                currOffset += subQueueFnArray.length - 1;
-              } else {
-                newFnArray[offset] = fnArray[i];
-                newArgsArray[offset] = argsArray[i];
+                else if (typeNum == SHADING_PATTERN) {
+                  var shading = dict.get('Shading');
+                  var matrix = dict.get('Matrix');
+                  var pattern = Pattern.parseShading(shading, matrix, xref,
+                                                     res);
+                  args = pattern.getIR();
+                } else {
+                  error('Unkown PatternType ' + typeNum);
+                }
               }
             }
+          } else if (cmd == 'Do' && !args[0].code) {
+            // eagerly compile XForm objects
+            var name = args[0].name;
+            var xobj = xobjs.get(name);
+            if (xobj) {
+              assertWellFormed(isStream(xobj), 'XObject should be a stream');
 
-            promise.resolve({
-              queue: {
-                fnArray: newFnArray,
-                argsArray: newArgsArray,
-                transparency: queue.transparency
-              },
-              dependencies: dependencies
-            });
-          });
-        } catch (e) {
-          if (!(e instanceof MissingDataException)) {
-            throw e;
+              var type = xobj.dict.get('Subtype');
+              assertWellFormed(
+                isName(type),
+                'XObject should have a Name subtype'
+              );
+
+              if ('Form' == type.name) {
+                buildFormXObject(xobj);
+                args = [];
+                continue;
+              } else if ('Image' == type.name) {
+                buildPaintImageXObject(xobj, false);
+              } else {
+                error('Unhandled XObject subtype ' + type.name);
+              }
+            }
+          } else if (cmd == 'Tf') { // eagerly collect all fonts
+            args[0] = handleSetFont(args[0].name);
+          } else if (cmd == 'EI') {
+            buildPaintImageXObject(args[0], true);
           }
 
-          self.pdfManager.requestRange(e.begin, e.end).then(parseCommands);
+          switch (fn) {
+            // Parse the ColorSpace data to a raw format.
+            case 'setFillColorSpace':
+            case 'setStrokeColorSpace':
+              args = [ColorSpace.parseToIR(args[0], xref, resources)];
+              break;
+            case 'shadingFill':
+              var shadingRes = res.get('Shading');
+              if (!shadingRes)
+                error('No shading resource found');
+
+              var shading = shadingRes.get(args[0].name);
+              if (!shading)
+                error('No shading object found');
+
+              var shadingFill = Pattern.parseShading(shading, null, xref, res);
+              var patternIR = shadingFill.getIR();
+              args = [patternIR];
+              fn = 'shadingFill';
+              break;
+            case 'setGState':
+              var dictName = args[0];
+              var extGState = resources.get('ExtGState');
+
+              if (!isDict(extGState) || !extGState.has(dictName.name))
+                break;
+
+              var gsState = extGState.get(dictName.name);
+
+              // This array holds the converted/processed state data.
+              var gsStateObj = [];
+
+              gsState.forEach(
+                function canvasGraphicsSetGStateForEach(key, value) {
+                  switch (key) {
+                    case 'Type':
+                      break;
+                    case 'LW':
+                    case 'LC':
+                    case 'LJ':
+                    case 'ML':
+                    case 'D':
+                    case 'RI':
+                    case 'FL':
+                    case 'CA':
+                    case 'ca':
+                      gsStateObj.push([key, value]);
+                      break;
+                    case 'Font':
+                      gsStateObj.push([
+                        'Font',
+                        handleSetFont(null, value[0]),
+                        value[1]
+                      ]);
+                      break;
+                    case 'BM':
+                      if (!isName(value) || value.name !== 'Normal') {
+                        queue.transparency = true;
+                      }
+                      gsStateObj.push([key, value]);
+                      break;
+                    case 'SMask':
+                      // We support the default so don't trigger the TODO.
+                      if (!isName(value) || value.name != 'None')
+                        TODO('graphic state operator ' + key);
+                      break;
+                    // Only generate info log messages for the following since
+                    // they are unlikey to have a big impact on the rendering.
+                    case 'OP':
+                    case 'op':
+                    case 'OPM':
+                    case 'BG':
+                    case 'BG2':
+                    case 'UCR':
+                    case 'UCR2':
+                    case 'TR':
+                    case 'TR2':
+                    case 'HT':
+                    case 'SM':
+                    case 'SA':
+                    case 'AIS':
+                    case 'TK':
+                      // TODO implement these operators.
+                      info('graphic state operator ' + key);
+                      break;
+                    default:
+                      info('Unknown graphic state operator ' + key);
+                      break;
+                  }
+                }
+              );
+              args = [gsStateObj];
+              break;
+          } // switch
+
+          fnArray.push(fn);
+          argsArray.push(args);
+          args = [];
+        } else if (obj !== null && obj !== undefined) {
+          args.push(obj instanceof Dict ? obj.getAll() : obj);
+          assertWellFormed(args.length <= 33, 'Too many arguments');
         }
       }
-      parser.saveState();
-      parseCommands();
 
-      return promise;
+      return queue;
     },
 
     getAnnotationsOperatorList:
         function PartialEvaluator_getAnnotationsOperatorList(annotations,
                                                              dependency) {
-      var promise = new Promise();
-
       // 12.5.5: Algorithm: Appearance streams
       function getTransformMatrix(rect, bbox, matrix) {
         var bounds = Util.getAxialAlignedBoundingBox(bbox, matrix);
@@ -16068,9 +14730,8 @@ var PartialEvaluator = (function PartialEvaluatorClosure() {
         ];
       }
 
-      var opListPromises = [];
-      var includedAnnotations = [];
-
+      var fnArray = [];
+      var argsArray = [];
       // deal with annotations
       for (var i = 0, length = annotations.length; i < length; ++i) {
         var annotation = annotations[i];
@@ -16084,242 +14745,287 @@ var PartialEvaluator = (function PartialEvaluatorClosure() {
           continue;
         }
 
-        includedAnnotations.push(annotation);
+        // apply rectangle
+        var rect = annotation.rect;
+        var bbox = annotation.bbox;
+        var matrix = annotation.matrix;
+        var transform = getTransformMatrix(rect, bbox, matrix);
+        var border = annotation.border;
+
+        fnArray.push('beginAnnotation');
+        argsArray.push([rect, transform, matrix, border]);
 
         if (annotation.appearance) {
-          var opListPromise = this.getOperatorList(annotation.appearance,
-            annotation.resources);
-          opListPromises.push(opListPromise);
-        } else {
-          var opListPromise = new Promise();
-          opListPromise.resolve(createOperatorList());
-          opListPromises.push(opListPromise);
+          var list = this.getOperatorList(annotation.appearance,
+            annotation.resources, dependency);
+
+          Util.concatenateToArray(fnArray, list.fnArray);
+          Util.concatenateToArray(argsArray, list.argsArray);
         }
+
+        fnArray.push('endAnnotation');
+        argsArray.push([]);
       }
 
-      Promise.all(opListPromises).then(function(datas) {
-        var fnArray = [];
-        var argsArray = [];
-        var dependencies = {};
-        for (var i = 0, n = datas.length; i < n; ++i) {
-          var annotation = includedAnnotations[i];
-          var data = datas[i];
+      return {
+        fnArray: fnArray,
+        argsArray: argsArray
+      };
+    },
 
-          // apply rectangle
-          var rect = annotation.rect;
-          var bbox = annotation.bbox;
-          var matrix = annotation.matrix;
-          var transform = getTransformMatrix(rect, bbox, matrix);
-          var border = annotation.border;
-
-          fnArray.push('beginAnnotation');
-          argsArray.push([rect, transform, matrix, border]);
-
-          Util.concatenateToArray(fnArray, data.queue.fnArray);
-          Util.concatenateToArray(argsArray, data.queue.argsArray);
-          Util.extendObj(dependencies, data.dependencies);
-
-          fnArray.push('endAnnotation');
-          argsArray.push([]);
+    optimizeQueue: function PartialEvaluator_optimizeQueue(queue) {
+      var fnArray = queue.fnArray, argsArray = queue.argsArray;
+      // grouping paintInlineImageXObject's into paintInlineImageXObjectGroup
+      // searching for (save, transform, paintInlineImageXObject, restore)+
+      var MIN_IMAGES_IN_INLINE_IMAGES_BLOCK = 10;
+      var MAX_IMAGES_IN_INLINE_IMAGES_BLOCK = 200;
+      var MAX_WIDTH = 1000;
+      var IMAGE_PADDING = 1;
+      for (var i = 0, ii = fnArray.length; i < ii; i++) {
+        if (fnArray[i] === 'paintInlineImageXObject' &&
+            fnArray[i - 2] === 'save' && fnArray[i - 1] === 'transform' &&
+            fnArray[i + 1] === 'restore') {
+          var j = i - 2;
+          for (i += 2; i < ii && fnArray[i - 4] === fnArray[i]; i++) {
+          }
+          var count = Math.min((i - j) >> 2,
+                               MAX_IMAGES_IN_INLINE_IMAGES_BLOCK);
+          if (count < MIN_IMAGES_IN_INLINE_IMAGES_BLOCK) {
+            continue;
+          }
+          // assuming that heights of those image is too small (~1 pixel)
+          // packing as much as possible by lines
+          var maxX = 0;
+          var map = [], maxLineHeight = 0;
+          var currentX = IMAGE_PADDING, currentY = IMAGE_PADDING;
+          for (var q = 0; q < count; q++) {
+            var transform = argsArray[j + (q << 2) + 1];
+            var img = argsArray[j + (q << 2) + 2][0];
+            if (currentX + img.width > MAX_WIDTH) {
+              // starting new line
+              maxX = Math.max(maxX, currentX);
+              currentY += maxLineHeight + 2 * IMAGE_PADDING;
+              currentX = 0;
+              maxLineHeight = 0;
+            }
+            map.push({
+              transform: transform,
+              x: currentX, y: currentY,
+              w: img.width, h: img.height
+            });
+            currentX += img.width + 2 * IMAGE_PADDING;
+            maxLineHeight = Math.max(maxLineHeight, img.height);
+          }
+          var imgWidth = Math.max(maxX, currentX) + IMAGE_PADDING;
+          var imgHeight = currentY + maxLineHeight + IMAGE_PADDING;
+          var imgData = new Uint8Array(imgWidth * imgHeight * 4);
+          var imgRowSize = imgWidth << 2;
+          for (var q = 0; q < count; q++) {
+            var data = argsArray[j + (q << 2) + 2][0].data;
+            // copy image by lines and extends pixels into padding
+            var rowSize = map[q].w << 2;
+            var dataOffset = 0;
+            var offset = (map[q].x + map[q].y * imgWidth) << 2;
+            imgData.set(
+              data.subarray(0, rowSize), offset - imgRowSize);
+            for (var k = 0, kk = map[q].h; k < kk; k++) {
+              imgData.set(
+                data.subarray(dataOffset, dataOffset + rowSize), offset);
+              dataOffset += rowSize;
+              offset += imgRowSize;
+            }
+            imgData.set(
+              data.subarray(dataOffset - rowSize, dataOffset), offset);
+            while (offset >= 0) {
+              data[offset - 4] = data[offset];
+              data[offset - 3] = data[offset + 1];
+              data[offset - 2] = data[offset + 2];
+              data[offset - 1] = data[offset + 3];
+              data[offset + rowSize] = data[offset + rowSize - 4];
+              data[offset + rowSize + 1] = data[offset + rowSize - 3];
+              data[offset + rowSize + 2] = data[offset + rowSize - 2];
+              data[offset + rowSize + 3] = data[offset + rowSize - 1];
+              offset -= imgRowSize;
+            }
+          }
+          // replacing queue items
+          fnArray.splice(j, count * 4, ['paintInlineImageXObjectGroup']);
+          argsArray.splice(j, count * 4,
+            [{width: imgWidth, height: imgHeight, data: imgData}, map]);
+          i = j;
+          ii = fnArray.length;
         }
-
-        promise.resolve(createOperatorList(fnArray, argsArray, dependencies));
-      });
-
-      return promise;
+      }
+      // grouping paintImageMaskXObject's into paintImageMaskXObjectGroup
+      // searching for (save, transform, paintImageMaskXObject, restore)+
+      var MIN_IMAGES_IN_MASKS_BLOCK = 10;
+      var MAX_IMAGES_IN_MASKS_BLOCK = 100;
+      for (var i = 0, ii = fnArray.length; i < ii; i++) {
+        if (fnArray[i] === 'paintImageMaskXObject' &&
+            fnArray[i - 2] === 'save' && fnArray[i - 1] === 'transform' &&
+            fnArray[i + 1] === 'restore') {
+          var j = i - 2;
+          for (i += 2; i < ii && fnArray[i - 4] === fnArray[i]; i++) {
+          }
+          var count = Math.min((i - j) >> 2,
+                               MAX_IMAGES_IN_MASKS_BLOCK);
+          if (count < MIN_IMAGES_IN_MASKS_BLOCK) {
+            continue;
+          }
+          var images = [];
+          for (var q = 0; q < count; q++) {
+            var transform = argsArray[j + (q << 2) + 1];
+            var maskParams = argsArray[j + (q << 2) + 2];
+            images.push({data: maskParams[0], width: maskParams[2],
+              height: maskParams[3], transform: transform,
+              inverseDecode: maskParams[1]});
+          }
+          // replacing queue items
+          fnArray.splice(j, count * 4, ['paintImageMaskXObjectGroup']);
+          argsArray.splice(j, count * 4, [images]);
+          i = j;
+          ii = fnArray.length;
+        }
+      }
     },
 
     getTextContent: function PartialEvaluator_getTextContent(
-                                                    stream, resources) {
-
+                                                    stream, resources, state) {
+      var bidiTexts;
       var SPACE_FACTOR = 0.35;
       var MULTI_SPACE_FACTOR = 1.5;
+
+      if (!state) {
+        bidiTexts = [];
+        state = {
+          bidiTexts: bidiTexts
+        };
+      } else {
+        bidiTexts = state.bidiTexts;
+      }
+
       var self = this;
+      var xref = this.xref;
 
-      var statePromise = new Promise();
-
-      function handleSetFont(fontName, fontRef, resources) {
-        var promise = new Promise();
-        self.loadFont(fontName, fontRef, self.xref, resources).then(
-          function(data) {
-            promise.resolve(data.font.translated);
-          }
-        );
-        return promise;
+      function handleSetFont(fontName, fontRef) {
+        return self.loadFont(fontName, fontRef, xref, resources, null);
       }
 
-      function getBidiText(str, startLevel, vertical) {
-        if (str) {
-          return PDFJS.bidi(str, -1, vertical);
-        }
-      }
-
-      resources = this.xref.fetchIfRef(resources) || new Dict();
+      resources = xref.fetchIfRef(resources) || new Dict();
       // The xobj is parsed iff it's needed, e.g. if there is a `DO` cmd.
       var xobjs = null;
 
       var parser = new Parser(new Lexer(stream), false);
+      var res = resources;
+      var args = [], obj;
 
-      var chunkPromises = [];
-      var fontPromise;
-      function parseCommands() {
-        try {
-          parser.restoreState();
-          var args = [];
-
-          while (true) {
-            var obj = parser.getObj();
-            if (isEOF(obj)) {
+      var chunk = '';
+      var font = null;
+      while (!isEOF(obj = parser.getObj())) {
+        if (isCmd(obj)) {
+          var cmd = obj.cmd;
+          switch (cmd) {
+            // TODO: Add support for SAVE/RESTORE and XFORM here.
+            case 'Tf':
+              font = handleSetFont(args[0].name).translated;
               break;
-            }
-
-            if (isCmd(obj)) {
-              var cmd = obj.cmd;
-              switch (cmd) {
-                // TODO: Add support for SAVE/RESTORE and XFORM here.
-                case 'Tf':
-                  fontPromise = handleSetFont(args[0].name, null, resources);
-                  //.translated;
-                  break;
-                case 'TJ':
-                  var chunkPromise = new Promise();
-                  chunkPromises.push(chunkPromise);
-                  fontPromise.then(function(items, font) {
-                    var chunk = '';
-                    for (var j = 0, jj = items.length; j < jj; j++) {
-                      if (typeof items[j] === 'string') {
-                        chunk += fontCharsToUnicode(items[j], font);
-                      } else if (items[j] < 0 && font.spaceWidth > 0) {
-                        var fakeSpaces = -items[j] / font.spaceWidth;
-                        if (fakeSpaces > MULTI_SPACE_FACTOR) {
-                          fakeSpaces = Math.round(fakeSpaces);
-                          while (fakeSpaces--) {
-                            chunk += ' ';
-                          }
-                        } else if (fakeSpaces > SPACE_FACTOR) {
-                          chunk += ' ';
-                        }
-                      }
+            case 'TJ':
+              var items = args[0];
+              for (var j = 0, jj = items.length; j < jj; j++) {
+                if (typeof items[j] === 'string') {
+                  chunk += fontCharsToUnicode(items[j], font);
+                } else if (items[j] < 0 && font.spaceWidth > 0) {
+                  var fakeSpaces = -items[j] / font.spaceWidth;
+                  if (fakeSpaces > MULTI_SPACE_FACTOR) {
+                    fakeSpaces = Math.round(fakeSpaces);
+                    while (fakeSpaces--) {
+                      chunk += ' ';
                     }
-
-                    chunkPromise.resolve(
-                        getBidiText(chunk, -1, font.vertical));
-                  }.bind(null, args[0]));
-                  break;
-                case 'Tj':
-                  var chunkPromise = new Promise();
-                  chunkPromises.push(chunkPromise);
-                  fontPromise.then(function(charCodes, font) {
-                    var chunk = fontCharsToUnicode(charCodes, font);
-                    chunkPromise.resolve(
-                        getBidiText(chunk, -1, font.vertical));
-                  }.bind(null, args[0]));
-                  break;
-                case '\'':
-                  // For search, adding a extra white space for line breaks
-                  // would be better here, but that causes too much spaces in
-                  // the text-selection divs.
-                  var chunkPromise = new Promise();
-                  chunkPromises.push(chunkPromise);
-                  fontPromise.then(function(charCodes, font) {
-                    var chunk = fontCharsToUnicode(charCodes, font);
-                    chunkPromise.resolve(
-                        getBidiText(chunk, -1, font.vertical));
-                  }.bind(null, args[0]));
-                  break;
-                case '"':
-                  // Note comment in "'"
-                  var chunkPromise = new Promise();
-                  chunkPromises.push(chunkPromise);
-                  fontPromise.then(function(charCodes, font) {
-                    var chunk = fontCharsToUnicode(charCodes, font);
-                    chunkPromise.resolve(
-                        getBidiText(chunk, -1, font.vertical));
-                  }.bind(null, args[2]));
-                  break;
-                case 'Do':
-                  if (args[0].code) {
-                    break;
+                  } else if (fakeSpaces > SPACE_FACTOR) {
+                    chunk += ' ';
                   }
-
-                  if (!xobjs) {
-                    xobjs = resources.get('XObject') || new Dict();
-                  }
-
-                  var name = args[0].name;
-                  var xobj = xobjs.get(name);
-                  if (!xobj)
-                    break;
-                  assertWellFormed(isStream(xobj),
-                                   'XObject should be a stream');
-
-                  var type = xobj.dict.get('Subtype');
-                  assertWellFormed(
-                    isName(type),
-                    'XObject should have a Name subtype'
-                  );
-
-                  if ('Form' !== type.name)
-                    break;
-
-                  var chunkPromise = self.getTextContent(
-                    xobj,
-                    xobj.dict.get('Resources') || resources
-                  );
-                  chunkPromises.push(chunkPromise);
-                  break;
-                case 'gs':
-                  var dictName = args[0];
-                  var extGState = resources.get('ExtGState');
-
-                  if (!isDict(extGState) || !extGState.has(dictName.name))
-                    break;
-
-                  var gsState = extGState.get(dictName.name);
-
-                  for (var i = 0; i < gsState.length; i++) {
-                    if (gsState[i] === 'Font') {
-                      fontPromise = handleSetFont(
-                          args[0].name, null, resources);
-                    }
-                  }
-                  break;
-              } // switch
-
-              args = [];
-              parser.saveState();
-            } else if (obj !== null && obj !== undefined) {
-              assertWellFormed(args.length <= 33, 'Too many arguments');
-              args.push(obj);
-            }
-          } // while
-
-          Promise.all(chunkPromises).then(function(datas) {
-            var bidiTexts = [];
-            for (var i = 0, n = datas.length; i < n; ++i) {
-              var bidiText = datas[i];
-              if (!bidiText) {
-                continue;
-              } else if (isArray(bidiText)) {
-                Util.concatenateToArray(bidiTexts, bidiText);
-              } else {
-                bidiTexts.push(bidiText);
+                }
               }
-            }
-            statePromise.resolve(bidiTexts);
-          });
-        } catch (e) {
-          if (!(e instanceof MissingDataException)) {
-            throw e;
+              break;
+            case 'Tj':
+              chunk += fontCharsToUnicode(args[0], font);
+              break;
+            case '\'':
+              // For search, adding a extra white space for line breaks would be
+              // better here, but that causes too much spaces in the
+              // text-selection divs.
+              chunk += fontCharsToUnicode(args[0], font);
+              break;
+            case '"':
+              // Note comment in "'"
+              chunk += fontCharsToUnicode(args[2], font);
+              break;
+            case 'Do':
+              // Set the chunk such that the following if won't add something
+              // to the state.
+              chunk = '';
+
+              if (args[0].code) {
+                break;
+              }
+
+              if (!xobjs) {
+                xobjs = resources.get('XObject') || new Dict();
+              }
+
+              var name = args[0].name;
+              var xobj = xobjs.get(name);
+              if (!xobj)
+                break;
+              assertWellFormed(isStream(xobj), 'XObject should be a stream');
+
+              var type = xobj.dict.get('Subtype');
+              assertWellFormed(
+                isName(type),
+                'XObject should have a Name subtype'
+              );
+
+              if ('Form' !== type.name)
+                break;
+
+              state = this.getTextContent(
+                xobj,
+                xobj.dict.get('Resources') || resources,
+                state
+              );
+              break;
+            case 'gs':
+              var dictName = args[0];
+              var extGState = resources.get('ExtGState');
+
+              if (!isDict(extGState) || !extGState.has(dictName.name))
+                break;
+
+              var gsState = extGState.get(dictName.name);
+
+              for (var i = 0; i < gsState.length; i++) {
+                if (gsState[i] === 'Font') {
+                  font = handleSetFont(args[0].name).translated;
+                }
+              }
+              break;
+          } // switch
+
+          if (chunk !== '') {
+            var bidiText = PDFJS.bidi(chunk, -1, font.vertical);
+            bidiTexts.push(bidiText);
+
+            chunk = '';
           }
 
-          self.pdfManager.requestRange(e.begin, e.end).then(parseCommands);
+          args = [];
+        } else if (obj !== null && obj !== undefined) {
+          assertWellFormed(args.length <= 33, 'Too many arguments');
+          args.push(obj);
         }
-      }
-      parser.saveState();
-      parseCommands();
+      } // while
 
-      return statePromise;
+      return state;
     },
 
     extractDataStructures: function
@@ -16661,7 +15367,9 @@ var PartialEvaluator = (function PartialEvaluatorClosure() {
     },
 
     translateFont: function PartialEvaluator_translateFont(dict,
-                                                           xref) {
+                                                           xref,
+                                                           resources,
+                                                           dependency) {
       var baseDict = dict;
       var type = dict.get('Subtype');
       assertWellFormed(isName(type), 'invalid font Subtype');
@@ -16809,125 +15517,6 @@ var PartialEvaluator = (function PartialEvaluatorClosure() {
       return new Font(fontName.name, fontFile, properties);
     }
   };
-
-  PartialEvaluator.optimizeQueue =
-      function PartialEvaluator_optimizeQueue(queue) {
-
-    var fnArray = queue.fnArray, argsArray = queue.argsArray;
-    // grouping paintInlineImageXObject's into paintInlineImageXObjectGroup
-    // searching for (save, transform, paintInlineImageXObject, restore)+
-    var MIN_IMAGES_IN_INLINE_IMAGES_BLOCK = 10;
-    var MAX_IMAGES_IN_INLINE_IMAGES_BLOCK = 200;
-    var MAX_WIDTH = 1000;
-    var IMAGE_PADDING = 1;
-    for (var i = 0, ii = fnArray.length; i < ii; i++) {
-      if (fnArray[i] === 'paintInlineImageXObject' &&
-          fnArray[i - 2] === 'save' && fnArray[i - 1] === 'transform' &&
-          fnArray[i + 1] === 'restore') {
-        var j = i - 2;
-        for (i += 2; i < ii && fnArray[i - 4] === fnArray[i]; i++) {
-        }
-        var count = Math.min((i - j) >> 2,
-                             MAX_IMAGES_IN_INLINE_IMAGES_BLOCK);
-        if (count < MIN_IMAGES_IN_INLINE_IMAGES_BLOCK) {
-          continue;
-        }
-        // assuming that heights of those image is too small (~1 pixel)
-        // packing as much as possible by lines
-        var maxX = 0;
-        var map = [], maxLineHeight = 0;
-        var currentX = IMAGE_PADDING, currentY = IMAGE_PADDING;
-        for (var q = 0; q < count; q++) {
-          var transform = argsArray[j + (q << 2) + 1];
-          var img = argsArray[j + (q << 2) + 2][0];
-          if (currentX + img.width > MAX_WIDTH) {
-            // starting new line
-            maxX = Math.max(maxX, currentX);
-            currentY += maxLineHeight + 2 * IMAGE_PADDING;
-            currentX = 0;
-            maxLineHeight = 0;
-          }
-          map.push({
-            transform: transform,
-            x: currentX, y: currentY,
-            w: img.width, h: img.height
-          });
-          currentX += img.width + 2 * IMAGE_PADDING;
-          maxLineHeight = Math.max(maxLineHeight, img.height);
-        }
-        var imgWidth = Math.max(maxX, currentX) + IMAGE_PADDING;
-        var imgHeight = currentY + maxLineHeight + IMAGE_PADDING;
-        var imgData = new Uint8Array(imgWidth * imgHeight * 4);
-        var imgRowSize = imgWidth << 2;
-        for (var q = 0; q < count; q++) {
-          var data = argsArray[j + (q << 2) + 2][0].data;
-          // copy image by lines and extends pixels into padding
-          var rowSize = map[q].w << 2;
-          var dataOffset = 0;
-          var offset = (map[q].x + map[q].y * imgWidth) << 2;
-          imgData.set(
-            data.subarray(0, rowSize), offset - imgRowSize);
-          for (var k = 0, kk = map[q].h; k < kk; k++) {
-            imgData.set(
-              data.subarray(dataOffset, dataOffset + rowSize), offset);
-            dataOffset += rowSize;
-            offset += imgRowSize;
-          }
-          imgData.set(
-            data.subarray(dataOffset - rowSize, dataOffset), offset);
-          while (offset >= 0) {
-            data[offset - 4] = data[offset];
-            data[offset - 3] = data[offset + 1];
-            data[offset - 2] = data[offset + 2];
-            data[offset - 1] = data[offset + 3];
-            data[offset + rowSize] = data[offset + rowSize - 4];
-            data[offset + rowSize + 1] = data[offset + rowSize - 3];
-            data[offset + rowSize + 2] = data[offset + rowSize - 2];
-            data[offset + rowSize + 3] = data[offset + rowSize - 1];
-            offset -= imgRowSize;
-          }
-        }
-        // replacing queue items
-        fnArray.splice(j, count * 4, ['paintInlineImageXObjectGroup']);
-        argsArray.splice(j, count * 4,
-          [{width: imgWidth, height: imgHeight, data: imgData}, map]);
-        i = j;
-        ii = fnArray.length;
-      }
-    }
-    // grouping paintImageMaskXObject's into paintImageMaskXObjectGroup
-    // searching for (save, transform, paintImageMaskXObject, restore)+
-    var MIN_IMAGES_IN_MASKS_BLOCK = 10;
-    var MAX_IMAGES_IN_MASKS_BLOCK = 100;
-    for (var i = 0, ii = fnArray.length; i < ii; i++) {
-      if (fnArray[i] === 'paintImageMaskXObject' &&
-          fnArray[i - 2] === 'save' && fnArray[i - 1] === 'transform' &&
-          fnArray[i + 1] === 'restore') {
-        var j = i - 2;
-        for (i += 2; i < ii && fnArray[i - 4] === fnArray[i]; i++) {
-        }
-        var count = Math.min((i - j) >> 2,
-                             MAX_IMAGES_IN_MASKS_BLOCK);
-        if (count < MIN_IMAGES_IN_MASKS_BLOCK) {
-          continue;
-        }
-        var images = [];
-        for (var q = 0; q < count; q++) {
-          var transform = argsArray[j + (q << 2) + 1];
-          var maskParams = argsArray[j + (q << 2) + 2];
-          images.push({data: maskParams[0], width: maskParams[2],
-            height: maskParams[3], transform: transform,
-            inverseDecode: maskParams[1]});
-        }
-        // replacing queue items
-        fnArray.splice(j, count * 4, ['paintImageMaskXObjectGroup']);
-        argsArray.splice(j, count * 4, [images]);
-        i = j;
-        ii = fnArray.length;
-      }
-    }
-  };
-
 
   return PartialEvaluator;
 })();
@@ -31605,21 +30194,6 @@ var Parser = (function ParserClosure() {
   }
 
   Parser.prototype = {
-    saveState: function Parser_saveState() {
-      this.state = {
-        buf1: this.buf1,
-        buf2: this.buf2,
-        streamPos: this.lexer.stream.pos
-      };
-    },
-
-    restoreState: function Parser_restoreState() {
-      var state = this.state;
-      this.buf1 = state.buf1;
-      this.buf2 = state.buf2;
-      this.lexer.stream.pos = state.streamPos;
-    },
-
     refill: function Parser_refill() {
       this.buf1 = this.lexer.getObj();
       this.buf2 = this.lexer.getObj();
@@ -32659,7 +31233,7 @@ var Stream = (function StreamClosure() {
     this.start = start || 0;
     this.pos = this.start;
     this.end = (start + length) || this.bytes.length;
-    this.parameters = this.dict = dict;
+    this.dict = dict;
   }
 
   // required methods for a stream. if a particular stream does not
@@ -33278,10 +31852,6 @@ var PredictorStream = (function PredictorStreamClosure() {
     var colors = this.colors;
 
     var rawBytes = this.stream.getBytes(rowBytes);
-    this.eof = !rawBytes.length;
-    if (this.eof) {
-      return;
-    }
 
     var inbuf = 0, outbuf = 0;
     var inbits = 0, outbits = 0;
@@ -33342,10 +31912,6 @@ var PredictorStream = (function PredictorStreamClosure() {
 
     var predictor = this.stream.getByte();
     var rawBytes = this.stream.getBytes(rowBytes);
-    this.eof = !rawBytes.length;
-    if (this.eof) {
-      return;
-    }
 
     var bufferLength = this.bufferLength;
     var buffer = this.ensureBuffer(bufferLength + rowBytes);
@@ -33494,7 +32060,6 @@ var JpegStream = (function JpegStreamClosure() {
       var data = jpegImage.getData(width, height);
       this.buffer = data;
       this.bufferLength = data.length;
-      this.eof = true;
     } catch (e) {
       error('JPEG error: ' + e);
     }
@@ -33630,7 +32195,6 @@ var JpxStream = (function JpxStreamClosure() {
 
     this.buffer = data;
     this.bufferLength = data.length;
-    this.eof = true;
   };
   JpxStream.prototype.getChar = function JpxStream_getChar() {
     error('internal error: getChar is not valid on JpxStream');
@@ -33675,7 +32239,6 @@ var Jbig2Stream = (function Jbig2StreamClosure() {
 
     this.buffer = data;
     this.bufferLength = dataLength;
-    this.eof = true;
   };
   Jbig2Stream.prototype.getChar = function Jbig2Stream_getChar() {
     error('internal error: getChar is not valid on Jbig2Stream');
@@ -35095,130 +33658,58 @@ MessageHandler.prototype = {
 
 var WorkerMessageHandler = {
   setup: function wphSetup(handler) {
-    var pdfManager;
+    var pdfModel = null;
 
-    function loadDocument(recoveryMode) {
-      var loadDocumentPromise = new Promise();
-
-      var parseSuccess = function parseSuccess() {
-        var numPagesPromise = pdfManager.ensureModel('numPages');
-        var fingerprintPromise = pdfManager.ensureModel('fingerprint');
-        var outlinePromise = pdfManager.ensureCatalog('documentOutline');
-        var infoPromise = pdfManager.ensureModel('documentInfo');
-        var metadataPromise = pdfManager.ensureCatalog('metadata');
-        var encryptedPromise = pdfManager.ensureXRef('encrypt');
-        var javaScriptPromise = pdfManager.ensureCatalog('javaScript');
-        Promise.all([numPagesPromise, fingerprintPromise, outlinePromise,
-          infoPromise, metadataPromise, encryptedPromise,
-          javaScriptPromise]).then(
-            function onDocReady(results) {
-
-          var doc = {
-            numPages: results[0],
-            fingerprint: results[1],
-            outline: results[2],
-            info: results[3],
-            metadata: results[4],
-            encrypted: !!results[5],
-            javaScript: results[6]
-          };
-          loadDocumentPromise.resolve(doc);
-        });
-      };
-
-      var parseFailure = function parseFailure(e) {
-        loadDocumentPromise.reject(e);
-      };
-
-    pdfManager.ensureModel('checkHeader', []).then(function() {
-      pdfManager.ensureModel('parseStartXRef', []).then(function() {
-        pdfManager.ensureModel('parse', [recoveryMode]).then(
-            parseSuccess, parseFailure);
-      });
-    });
-
-      return loadDocumentPromise;
-    }
-
-    function getPdfManager(data) {
-      var pdfManagerPromise = new Promise();
-
-      var source = data.source;
-      var disableRange = data.disableRange;
-      if (source.data) {
-        pdfManager = new LocalPdfManager(source.data, source.password);
-        pdfManagerPromise.resolve();
-        return pdfManagerPromise;
-      } else if (source.chunkedViewerLoading) {
-        pdfManager = new NetworkPdfManager(source, handler);
-        pdfManagerPromise.resolve();
-        return pdfManagerPromise;
-      }
-
-      var networkManager = new NetworkManager(source.url, {
-        httpHeaders: source.httpHeaders
-      });
-      var fullRequestXhrId = networkManager.requestFull({
-        onHeadersReceived: function onHeadersReceived() {
-          if (disableRange) {
-            return;
+    function loadDocument(pdfData, pdfModelSource) {
+      // Create only the model of the PDFDoc, which is enough for
+      // processing the content of the pdf.
+      var pdfPassword = pdfModelSource.password;
+      try {
+        pdfModel = new PDFDocument(new Stream(pdfData), pdfPassword);
+      } catch (e) {
+        if (e instanceof PasswordException) {
+          if (e.code === 'needpassword') {
+            handler.send('NeedPassword', {
+              exception: e
+            });
+          } else if (e.code === 'incorrectpassword') {
+            handler.send('IncorrectPassword', {
+              exception: e
+            });
           }
 
-          var fullRequestXhr = networkManager.getRequestXhr(fullRequestXhrId);
-          if (fullRequestXhr.getResponseHeader('Accept-Ranges') !== 'bytes') {
-            return;
-          }
-
-          var contentEncoding =
-            fullRequestXhr.getResponseHeader('Content-Encoding') || 'identity';
-          if (contentEncoding !== 'identity') {
-            return;
-          }
-
-          var length = fullRequestXhr.getResponseHeader('Content-Length');
-          length = parseInt(length, 10);
-          if (!isInt(length)) {
-            return;
-          }
-
-          // NOTE: by cancelling the full request, and then issuing range
-          // requests, there will be an issue for sites where you can only
-          // request the pdf once. However, if this is the case, then the
-          // server should not be returning that it can support range requests.
-          networkManager.abortRequest(fullRequestXhrId);
-
-          source.length = length;
-          pdfManager = new NetworkPdfManager(source, handler);
-          pdfManagerPromise.resolve(pdfManager);
-        },
-
-        onDone: function onDone(args) {
-          // the data is array, instantiating directly from it
-          pdfManager = new LocalPdfManager(args.chunk, source.password);
-          pdfManagerPromise.resolve();
-        },
-
-        onError: function onError(status) {
-          if (status == 404) {
-            var exception = new MissingPDFException( 'Missing PDF "' +
-                source.url + '".');
-            handler.send('MissingPDF', { exception: exception });
-          } else {
-            handler.send('DocError', 'Unexpected server response (' +
-                status + ') while retrieving PDF "' +
-                source.url + '".');
-          }
-        },
-
-        onProgress: function onProgress(evt) {
-          handler.send('DocProgress', {
-            loaded: evt.loaded,
-            total: evt.lengthComputable ? evt.total : void(0)
+          return;
+        } else if (e instanceof InvalidPDFException) {
+          handler.send('InvalidPDF', {
+            exception: e
           });
-        }
-      });
 
-      return pdfManagerPromise;
+          return;
+        } else if (e instanceof MissingPDFException) {
+          handler.send('MissingPDF', {
+            exception: e
+          });
+
+          return;
+        } else {
+          handler.send('UnknownError', {
+            exception: new UnknownErrorException(e.message, e.toString())
+          });
+
+          return;
+        }
+      }
+      var doc = {
+        numPages: pdfModel.numPages,
+        fingerprint: pdfModel.getFingerprint(),
+        destinations: pdfModel.catalog.destinations,
+        javaScript: pdfModel.catalog.javaScript,
+        outline: pdfModel.catalog.documentOutline,
+        info: pdfModel.getDocumentInfo(),
+        metadata: pdfModel.catalog.metadata,
+        encrypted: !!pdfModel.xref.encrypt
+      };
+      handler.send('GetDoc', {pdfInfo: doc});
     }
 
     handler.on('test', function wphSetupTest(data) {
@@ -35244,191 +33735,140 @@ var WorkerMessageHandler = {
     });
 
     handler.on('GetDocRequest', function wphSetupDoc(data) {
+      var source = data.source;
+      if (source.data) {
+        // the data is array, instantiating directly from it
+        loadDocument(source.data, source);
+        return;
+      }
 
-      var onSuccess = function(doc) {
-        handler.send('GetDoc', { pdfInfo: doc });
-        pdfManager.ensureModel('traversePages', []);
-      };
-
-      var onFailure = function(e) {
-        if (e instanceof PasswordException) {
-          if (e.code === 'needpassword') {
-            handler.send('NeedPassword', {
-              exception: e
+      PDFJS.getPdf(
+        {
+          url: source.url,
+          progress: function getPDFProgress(evt) {
+            handler.send('DocProgress', {
+              loaded: evt.loaded,
+              total: evt.lengthComputable ? evt.total : void(0)
             });
-          } else if (e.code === 'incorrectpassword') {
-            handler.send('IncorrectPassword', {
-              exception: e
-            });
-          }
-        } else if (e instanceof InvalidPDFException) {
-          handler.send('InvalidPDF', {
-            exception: e
-          });
-        } else if (e instanceof MissingPDFException) {
-          handler.send('MissingPDF', {
-            exception: e
-          });
-        } else {
-          handler.send('UnknownError', {
-            exception: new UnknownErrorException(e.message, e.toString())
-          });
-        }
-      };
-
-      getPdfManager(data).then(function() {
-        loadDocument(false).then(onSuccess, function(ex) {
-          // Try again with recoveryMode == true
-          if (!(ex instanceof XRefParseException)) {
-            onFailure(ex);
-            return;
-          }
-
-          pdfManager.requestLoadedStream();
-          pdfManager.onLoadedStream().then(function() {
-            loadDocument(true).then(onSuccess, onFailure);
-          });
+          },
+          error: function getPDFError(e) {
+            if (e.target.status == 404) {
+              handler.send('MissingPDF', {
+                exception: new MissingPDFException(
+                  'Missing PDF \"' + source.url + '\".')});
+            } else {
+              handler.send('DocError', 'Unexpected server response (' +
+                            e.target.status + ') while retrieving PDF \"' +
+                            source.url + '\".');
+            }
+          },
+          headers: source.httpHeaders
+        },
+        function getPDFLoad(data) {
+          loadDocument(data, source);
         });
-      });
     });
 
     handler.on('GetPageRequest', function wphSetupGetPage(data) {
-      var pageIndex = data.pageIndex;
-      pdfManager.getPage(pageIndex).then(function(page) {
-        var rotatePromise = pdfManager.ensure(page, 'rotate');
-        var refPromise = pdfManager.ensure(page, 'ref');
-        var viewPromise = pdfManager.ensure(page, 'view');
-
-        Promise.all([rotatePromise, refPromise, viewPromise]).then(
-            function(results) {
-          var page = {
-            pageIndex: data.pageIndex,
-            rotate: results[0],
-            ref: results[1],
-            view: results[2]
-          };
-
-          handler.send('GetPage', { pageInfo: page });
-        });
-      });
+      var pageNumber = data.pageIndex + 1;
+      var pdfPage = pdfModel.getPage(pageNumber);
+      var page = {
+        pageIndex: data.pageIndex,
+        rotate: pdfPage.rotate,
+        ref: pdfPage.ref,
+        view: pdfPage.view
+      };
+      handler.send('GetPage', {pageInfo: page});
     });
-
-    handler.on('GetDestinations',
-      function wphSetupGetDestinations(data, promise) {
-        pdfManager.ensureCatalog('destinations').then(function(destinations) {
-          promise.resolve(destinations);
-        });
-      }
-    );
 
     handler.on('GetData', function wphSetupGetData(data, promise) {
-      pdfManager.requestLoadedStream();
-      pdfManager.onLoadedStream().then(function(stream) {
-        promise.resolve(stream.bytes);
-      });
-    });
-
-    handler.on('DataLoaded', function wphSetupDataLoaded(data, promise) {
-      pdfManager.onLoadedStream().then(function(stream) {
-        promise.resolve({ length: stream.bytes.byteLength });
-      });
+      promise.resolve(pdfModel.stream.bytes);
     });
 
     handler.on('GetAnnotationsRequest', function wphSetupGetAnnotations(data) {
-      pdfManager.getPage(data.pageIndex).then(function(page) {
-        pdfManager.ensure(page, 'getAnnotations',[]).then(
-          function(annotations) {
-            handler.send('GetAnnotations', {
-              pageIndex: data.pageIndex,
-              annotations: annotations
-            });
-          }
-        );
+      var pdfPage = pdfModel.getPage(data.pageIndex + 1);
+      handler.send('GetAnnotations', {
+        pageIndex: data.pageIndex,
+        annotations: pdfPage.getAnnotations()
       });
     });
 
     handler.on('RenderPageRequest', function wphSetupRenderPage(data) {
-      pdfManager.getPage(data.pageIndex).then(function(page) {
+      var pageNum = data.pageIndex + 1;
 
-        var pageNum = data.pageIndex + 1;
-        var start = Date.now();
+      var start = Date.now();
+
+      var dependency = [];
+      var operatorList = null;
+      try {
+        var page = pdfModel.getPage(pageNum);
         // Pre compile the pdf page and fetch the fonts/images.
-        page.getOperatorList(handler).then(function(opListData) {
+        operatorList = page.getOperatorList(handler, dependency);
+      } catch (e) {
+        var minimumStackMessage =
+            'worker.js: while trying to getPage() and getOperatorList()';
 
-          var operatorList = opListData.queue;
-          var dependency = Object.keys(opListData.dependencies);
+        var wrappedException;
 
-          // The following code does quite the same as
-          // Page.prototype.startRendering, but stops at one point and sends the
-          // result back to the main thread.
+        // Turn the error into an obj that can be serialized
+        if (typeof e === 'string') {
+          wrappedException = {
+            message: e,
+            stack: minimumStackMessage
+          };
+        } else if (typeof e === 'object') {
+          wrappedException = {
+            message: e.message || e.toString(),
+            stack: e.stack || minimumStackMessage
+          };
+        } else {
+          wrappedException = {
+            message: 'Unknown exception type: ' + (typeof e),
+            stack: minimumStackMessage
+          };
+        }
 
-          log('page=%d - getOperatorList: time=%dms, len=%d', pageNum,
-              Date.now() - start, operatorList.fnArray.length);
-
-          // Filter the dependecies for fonts.
-          var fonts = {};
-          for (var i = 0, ii = dependency.length; i < ii; i++) {
-            var dep = dependency[i];
-            if (dep.indexOf('g_font_') === 0) {
-              fonts[dep] = true;
-            }
-          }
-          handler.send('RenderPage', {
-            pageIndex: data.pageIndex,
-            operatorList: operatorList,
-            depFonts: Object.keys(fonts)
-          });
-        }, function(e) {
-
-          var minimumStackMessage =
-              'worker.js: while trying to getPage() and getOperatorList()';
-
-          var wrappedException;
-
-          // Turn the error into an obj that can be serialized
-          if (typeof e === 'string') {
-            wrappedException = {
-              message: e,
-              stack: minimumStackMessage
-            };
-          } else if (typeof e === 'object') {
-            wrappedException = {
-              message: e.message || e.toString(),
-              stack: e.stack || minimumStackMessage
-            };
-          } else {
-            wrappedException = {
-              message: 'Unknown exception type: ' + (typeof e),
-              stack: minimumStackMessage
-            };
-          }
-
-          handler.send('PageError', {
-            pageNum: pageNum,
-            error: wrappedException
-          });
+        handler.send('PageError', {
+          pageNum: pageNum,
+          error: wrappedException
         });
+        return;
+      }
+
+      log('page=%d - getOperatorList: time=%dms, len=%d', pageNum,
+                              Date.now() - start, operatorList.fnArray.length);
+
+      // Filter the dependecies for fonts.
+      var fonts = {};
+      for (var i = 0, ii = dependency.length; i < ii; i++) {
+        var dep = dependency[i];
+        if (dep.indexOf('g_font_') === 0) {
+          fonts[dep] = true;
+        }
+      }
+      handler.send('RenderPage', {
+        pageIndex: data.pageIndex,
+        operatorList: operatorList,
+        depFonts: Object.keys(fonts)
       });
     }, this);
 
     handler.on('GetTextContent', function wphExtractText(data, promise) {
-      pdfManager.getPage(data.pageIndex).then(function(page) {
-        var pageNum = data.pageIndex + 1;
-        var start = Date.now();
-        page.extractTextContent().then(function(textContent) {
-          promise.resolve(textContent);
-          log('text indexing: page=%d - time=%dms', pageNum,
-              Date.now() - start);
-        }, function (e) {
-          // Skip errored pages
-          promise.reject(e);
-        });
-      });
-    });
+      var pageNum = data.pageIndex + 1;
+      var start = Date.now();
 
-    handler.on('Terminate', function wphTerminate(data, promise) {
-      pdfManager.streamManager.networkManager.abortAllRequests();
-      promise.resolve();
+      var textContent = '';
+      try {
+        var page = pdfModel.getPage(pageNum);
+        textContent = page.extractTextContent();
+        promise.resolve(textContent);
+      } catch (e) {
+        // Skip errored pages
+        promise.reject(e);
+      }
+
+      log('text indexing: page=%d - time=%dms',
+                      pageNum, Date.now() - start);
     });
   }
 };
