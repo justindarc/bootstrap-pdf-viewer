@@ -1,6 +1,87 @@
 .pdf-form-field {
-  border: 1px dashed #333;
+  background: rgba(255, 255, 255, 0.8);
+  border: 1px dashed #d9d9d9;
   position: absolute;
-  min-width: 40px;
-  min-height: 40px;
+  top: 0;
+  left: 0;
+  width: auto;
+  height: auto;
+  -webkit-user-select: none;
+     -moz-user-select: none;
+      -ms-user-select: none;
+       -o-user-select: none;
+          user-select: none;
+  -webkit-transform: translate(0, 0);
+     -moz-transform: translate(0, 0);
+      -ms-transform: translate(0, 0);
+       -o-transform: translate(0, 0);
+          transform: translate(0, 0);
+  -webkit-transition: border 0.2s ease;
+     -moz-transition: border 0.2s ease;
+      -ms-transition: border 0.2s ease;
+       -o-transition: border 0.2s ease;
+          transition: border 0.2s ease;
 }
+
+.pdf-form-field.pdf-form-field-focus {
+  border: 1px dashed #44687c;
+  cursor: move;
+}
+
+.pdf-form-field::after {
+  content: '';
+  position: absolute;
+  top: -10px;
+  right: -10px;
+  bottom: -10px;
+  left: -10px;
+  width: auto;
+  height: auto;
+  z-index: -1;
+}
+
+.pdf-form-field-handle {
+  background: #eef9fe;
+  border: 1px solid #668c9f;
+  opacity: 0;
+  visibility: hidden;
+  position: absolute;
+  width: 9px;
+  height: 9px;
+  -webkit-box-shadow: 0 0 2px 1px rgba(0, 128, 224, 0.4);
+     -moz-box-shadow: 0 0 2px 1px rgba(0, 128, 224, 0.4);
+          box-shadow: 0 0 2px 1px rgba(0, 128, 224, 0.4);
+  -webkit-transition: opacity 0.2s ease, visibility 0s linear 0.2s;
+     -moz-transition: opacity 0.2s ease, visibility 0s linear 0.2s;
+      -ms-transition: opacity 0.2s ease, visibility 0s linear 0.2s;
+       -o-transition: opacity 0.2s ease, visibility 0s linear 0.2s;
+          transition: opacity 0.2s ease, visibility 0s linear 0.2s;
+}
+
+.pdf-form-field-handle::after {
+  content: '';
+  position: absolute;
+  top: -11px;
+  left: -11px;
+  width: 29px;
+  height: 29px;
+}
+
+.pdf-form-field.pdf-form-field-focus > .pdf-form-field-handle {
+  opacity: 1;
+  visibility: visible;
+  -webkit-transition-delay: 0s;
+     -moz-transition-delay: 0s;
+      -ms-transition-delay: 0s;
+       -o-transition-delay: 0s;
+          transition-delay: 0s;
+}
+
+.pdf-form-field-handle-n  { cursor: n-resize;  cursor: ns-resize;   margin: 0 0 0 -6px; top: -6px;  right: auto; bottom: auto; left:  50%; }
+.pdf-form-field-handle-ne { cursor: ne-resize; cursor: nesw-resize; margin: 0;          top: -6px;  right: -6px; bottom: auto; left: auto; }
+.pdf-form-field-handle-e  { cursor: e-resize;  cursor: ew-resize;   margin: -6px 0 0;   top:  50%;  right: -6px; bottom: auto; left: auto; }
+.pdf-form-field-handle-se { cursor: se-resize; cursor: nwse-resize; margin: 0;          top: auto;  right: -6px; bottom: -6px; left: auto; }
+.pdf-form-field-handle-s  { cursor: s-resize;  cursor: ns-resize;   margin: 0 0 0 -6px; top: auto;  right: auto; bottom: -6px; left:  50%; }
+.pdf-form-field-handle-sw { cursor: sw-resize; cursor: nesw-resize; margin: 0;          top: auto;  right: auto; bottom: -6px; left: -6px; }
+.pdf-form-field-handle-w  { cursor: w-resize;  cursor: ew-resize;   margin: -6px 0 0;   top:  50%;  right: auto; bottom: auto; left: -6px; }
+.pdf-form-field-handle-nw { cursor: nw-resize; cursor: nwse-resize; margin: 0;          top: -6px;  right: auto; bottom: auto; left: -6px; }
