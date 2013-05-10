@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<!--[if IEMobile 7 ]>    <html class="no-js iem7"> <![endif]-->
+<!--[if (gt IEMobile 7)|!(IEMobile)]><!--> <html class="no-js"> <!--<![endif]-->
+  <head>
+    <meta charset="utf-8">
+    <title>Bootstrap PDF Viewer</title>
+    <meta name="description" content="">
+    <meta name="HandheldFriendly" content="True">
+    <meta name="MobileOptimized" content="320">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta http-equiv="cleartype" content="on">
+
+    <!-- For iOS web apps. Delete if not needed. https://github.com/h5bp/mobile-boilerplate/issues/94 -->    
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black">
+    <meta name="apple-mobile-web-app-title" content="">
+    
+    <!-- Twitter Bootstrap -->
+    <link rel="stylesheet" href="lib/twitter-bootstrap/docs/assets/css/bootstrap.css">
+    <style type="text/css">
+      body {
+        padding-top: 60px;
+      }
+    </style>
+    <link rel="stylesheet" href="lib/twitter-bootstrap/docs/assets/css/bootstrap-responsive.css">
+
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="lib/font-awesome/css/font-awesome.css">
+
+    <!-- Bootstrap PDF Viewer -->
+    <link rel="stylesheet" href="css/bootstrap-pdf-viewer.css">
+  </head>
+  <body>
+
+    <div class="navbar navbar-inverse navbar-fixed-top">
+      <div class="navbar-inner">
+        <div class="container-fluid">
+          <a class="brand" href="#">Bootstrap PDF Viewer</a>
+        </div>
+      </div>
+    </div>
+
+    <div class="container-fluid">
+      <div class="row-fluid">
+        <div class="span12">
+
+          <!-- Bootstrap PDF Viewer -->
+          <div id="viewer" class="pdf-viewer" data-url="sample.pdf"></div>
+
+        </div>
+      </div>
+    </div>
+
+    <!-- jQuery -->
+    <script src="lib/jquery-1.9.1.js"></script>
+
+    <!-- Twitter Bootstrap -->
+    <script src="lib/twitter-bootstrap/docs/assets/js/bootstrap.js"></script>
+
+    <!-- Bootstrap PDF Viewer -->
+    <script src="lib/pdf.js"></script>
+    <script src="js/bootstrap-pdf-viewer.js"></script>
+
+    <script>
+      var viewer;
+
+      $(function() {
+        viewer = new PDFViewer($('#viewer'));
+      });
+    </script>
+  </body>
+</html>

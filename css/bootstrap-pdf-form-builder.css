@@ -1,0 +1,6 @@
+.pdf-form-field {
+  border: 1px dashed #333;
+  position: absolute;
+  min-width: 40px;
+  min-height: 40px;
+}
