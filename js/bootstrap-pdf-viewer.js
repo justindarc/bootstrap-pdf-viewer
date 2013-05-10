@@ -176,6 +176,30 @@ PDFViewer.Util = {
     if ('KhtmlOpacity' in script.style) return arguments.callee.result = 'khtml';
 
     return arguments.callee.result = '';
+  },
+
+  getPositionForEvent: function(evt, identifier) {
+    if (evt.type.indexOf('mouse') !== -1) return { x: evt.pageX, y: evt.pageY };
+    
+    evt = evt.originalEvent;
+    
+    var touch = (identifier) ? this.getTouchWithIdentifier(evt.touches, identifier) : this.getTouchWithIdentifier(evt.targetTouches);
+    return { x: touch.pageX, y: touch.pageY };
+  },
+
+  getTouchWithIdentifier: function(touches, identifier) {
+    if (touches.length === 0) return null;
+    if (!identifier) return touches[0];
+
+    for (var i = 0, length = touches.length, touch; i < length; i++) {
+      if ((touch = touches[i]).identifier === identifier) return touch;
+    }
+
+    return null;
+  },
+
+  getDeltaForPositions: function(positionA, positionB) {
+    return { x: positionA.x - positionB.x, y: positionA.y - positionB.y };
   }
 };
 
@@ -728,7 +752,7 @@ PDFViewerTextLayer.prototype = {
 
 var PDFScrollView = function PDFScrollView(element) {
   var Options = PDFScrollView.Options,
-      Util    = PDFScrollView.Util;
+      Util    = PDFViewer.Util;
 
   var $element = this.$element = $(element);
   element = this.element = $element[0];
@@ -782,7 +806,7 @@ var PDFScrollView = function PDFScrollView(element) {
 
   var startDeceleration = function(startTime) {
     var acceleration = (startAccelerateTime - startTime) / Options.acceleration,
-        accelerateDelta = Util.getDeltaForCoordinates(position, startAcceleratePosition),
+        accelerateDelta = Util.getDeltaForPositions(position, startAcceleratePosition),
         velocity = {
           x: accelerateDelta.x / acceleration,
           y: accelerateDelta.y / acceleration
@@ -866,8 +890,8 @@ var PDFScrollView = function PDFScrollView(element) {
     
     if (!self._isScrolling) startScroll();
 
-    var touchPosition = Util.getCoordinatesForEvent(evt, lastTouchIdentifier),
-        touchDelta    = Util.getDeltaForCoordinates(touchPosition, lastTouchPosition);
+    var touchPosition = Util.getPositionForEvent(evt, lastTouchIdentifier),
+        touchDelta    = Util.getDeltaForPositions(touchPosition, lastTouchPosition);
     
     if (!self.isPositionInBounds()) {
       touchDelta.x /= 2;
@@ -904,7 +928,7 @@ var PDFScrollView = function PDFScrollView(element) {
   };
 
   $element.on(isTouchSupported ? 'touchstart' : 'mousedown', function(evt) {
-    lastTouchPosition = Util.getCoordinatesForEvent(evt);
+    lastTouchPosition = Util.getPositionForEvent(evt);
     lastTouchIdentifier = (isTouchSupported) ? evt.originalEvent.targetTouches[0].identifier : null;
     
     stopDeceleration();
@@ -927,32 +951,6 @@ PDFScrollView.Options = {
   decelerationFactor: 0.85,
   minVelocity: 0.01,
   minDeltaForScrollEvent: 0.5
-};
-
-PDFScrollView.Util = {
-  getCoordinatesForEvent: function(evt, identifier) {
-    if (evt.type.indexOf('mouse') !== -1) return { x: evt.pageX, y: evt.pageY };
-    
-    evt = evt.originalEvent;
-    
-    var touch = (identifier) ? this.getTouchWithIdentifier(evt.touches, identifier) : this.getTouchWithIdentifier(evt.targetTouches);
-    return { x: touch.pageX, y: touch.pageY };
-  },
-
-  getTouchWithIdentifier: function(touches, identifier) {
-    if (touches.length === 0) return null;
-    if (!identifier) return touches[0];
-
-    for (var i = 0, length = touches.length, touch; i < length; i++) {
-      if ((touch = touches[i]).identifier === identifier) return touch;
-    }
-
-    return null;
-  },
-
-  getDeltaForCoordinates: function(coordA, coordB) {
-    return { x: coordA.x - coordB.x, y: coordA.y - coordB.y };
-  }
 };
 
 PDFScrollView.prototype = {
