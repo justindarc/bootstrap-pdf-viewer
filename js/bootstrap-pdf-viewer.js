@@ -31,7 +31,7 @@ var PDFViewer = function PDFViewer(element) {
   var $navbarRight = this.$navbarRight = $('<ul class="nav pull-right"/>').appendTo($navbarInner);
   
   $('<li class="dropdown">' +
-    '<a href="#" class="dropdown-toggle" data-toggle="dropdown"><i class="icon-zoom-in"/> Zoom <b class="caret"/></a>' +
+    '<a href="#" class="dropdown-toggle" data-toggle="dropdown"><i class="icon-zoom-in"/> <b class="caret"/></a>' +
     '<ul class="dropdown-menu">' +
       '<li><a href="#zoom" data-value="' + PDFViewer.Scale.AUTO + '"><i class="icon-ok"/> Automatic</a></li>' +
       '<li><a href="#zoom" data-value="' + PDFViewer.Scale.PAGE_WIDTH + '"><i/> Page Width</a></li>' +
@@ -46,9 +46,10 @@ var PDFViewer = function PDFViewer(element) {
       '<li><a href="#zoom" data-value="' + PDFViewer.Scale.PERCENT_200 + '"><i/> 200%</a></li>' +
       '<li><a href="#zoom" data-value="' + PDFViewer.Scale.PERCENT_300 + '"><i/> 300%</a></li>' +
     '</ul>' +
-  '</li>').appendTo($navbarLeft);
+  '</li>').appendTo($navbarRight);
 
-  $('<li><a href="#full-screen" rel="tooltip" title="Full Screen"><i class="icon-fullscreen"/> Full Screen</a></li>').appendTo($navbarRight);
+  var isTouchSupported = !!('ontouchstart' in window);
+  if (!isTouchSupported) $('<li><a href="#full-screen" rel="tooltip" title="Full Screen"><i class="icon-fullscreen"/></a></li>').appendTo($navbarRight);
   
   $navbarInner.find('[rel="tooltip"], [data-rel="tooltip"]').tooltip({
     delay: { show: 300, hide: 150 },
@@ -115,7 +116,8 @@ var PDFViewer = function PDFViewer(element) {
     }, PDFViewer.RESIZE_TIMEOUT);
   });
   
-  var $pageViewContainer = this.$pageViewContainer = $('<div class="pdf-viewer-page-view-container pdf-scroll-view"/>').appendTo($element);
+  var $viewerContainer   = this.$viewerContainer   = $('<div class="pdf-viewer-container"/>').appendTo($element);
+  var $pageViewContainer = this.$pageViewContainer = $('<div class="pdf-viewer-page-view-container pdf-scroll-view"/>').appendTo($viewerContainer);
   
   var scrollView = this._scrollView = new PDFScrollView($pageViewContainer);
 
@@ -137,7 +139,7 @@ var PDFViewer = function PDFViewer(element) {
 PDFViewer.MINIMUM_HEIGHT    = 400;
 PDFViewer.PAGE_SPACING      = 10;
 PDFViewer.UPDATE_TIMEOUT    = 100;
-PDFViewer.SCROLLBAR_PADDING = 40;
+PDFViewer.SCROLLBAR_PADDING = 20;
 PDFViewer.RESIZE_TIMEOUT    = 1000;
 
 PDFViewer.RenderingStateType = {
@@ -203,6 +205,10 @@ PDFViewer.Util = {
   }
 };
 
+PDFViewer.EventType = {
+  ScaleChange: 'PDFViewer:ScaleChange',
+};
+
 PDFViewer.prototype = {
   constructor: PDFViewer,
   
@@ -212,6 +218,7 @@ PDFViewer.prototype = {
   $navbarContainer: null,
   $navbarLeft: null,
   $navbarRight: null,
+  $viewerContainer: null,
   $pageViewContainer: null,
   
   _scrollView: null,
@@ -343,15 +350,24 @@ PDFViewer.prototype = {
     this.redraw();
   },
 
+  _lastCalculatedScale: 0,
+
+  getCalculatedScale: function() {
+    return (this._pageViews.length > 0) ? this.calculateScale(this._pageViews[0]) : 1;
+  },
+
   _pageViews: null,
   
   getPageViews: function() { return this._pageViews; },
   
+  _currentPageViewIndex: -1,
+
   getCurrentPageView: function() {
     var pageViews = this._pageViews;
-    if (!pageViews || pageViews.length === 0) return null;
+    var index = this._currentPageViewIndex;
+    if (index < 0 || !pageViews || pageViews.length === 0) return null;
 
-    return pageViews[0];
+    return pageViews[index];
   },
 
   _numberOfPages: 0,
@@ -371,12 +387,23 @@ PDFViewer.prototype = {
     
     var promise = PDFJS.Promise.all(pages);
     promise.then(function(promisedPages) {
-      for (var i = 0, length = promisedPages.length; i < length; i++) {
-        pageViews.push(new PDFViewerPageView(self, promisedPages[i]));
+      var actualHeight = 0;
+      for (var i = 0, length = promisedPages.length, pageView; i < length; i++) {
+        pageViews.push(pageView = new PDFViewerPageView(self, promisedPages[i]));
+        actualHeight += pageView.getActualHeight();
+
+        if (i === 0) self._actualWidth = pageView.getActualWidth();
       }
       
+      self._actualHeight = actualHeight;
+
       self.optimizeHeight();
       self.updateView();
+
+      self.$element.trigger($.Event(PDFViewer.EventType.ScaleChange, {
+        scale: self._scale,
+        calculatedScale: (self._lastCalculatedScale = self.getCalculatedScale())
+      }));
     });
   },
   
@@ -413,6 +440,8 @@ PDFViewer.prototype = {
     
     if (minimumViewablePageIndex === -1 || maximumViewablePageIndex === -1) return;
 
+    this._currentPageViewIndex = minimumViewablePageIndex;
+
     for (i = 0, length = pageViews.length; i < length; i++) {
       pageView = pageViews[i];
       
@@ -443,6 +472,14 @@ PDFViewer.prototype = {
     }
   },
 
+  _actualWidth: 0,
+
+  getActualWidth: function() { return this._actualWidth; },
+
+  _actualHeight: 0,
+
+  getActualHeight: function() { return this._actualHeight; },
+
   redraw: function() {
     this.optimizeHeight();
 
@@ -455,6 +492,14 @@ PDFViewer.prototype = {
     }
     
     this.updateView();
+
+    var calculatedScale = this.getCalculatedScale();
+    if (calculatedScale !== this._lastCalculatedScale) {
+      this.$element.trigger($.Event(PDFViewer.EventType.ScaleChange, {
+        scale: this._scale,
+        calculatedScale: (this._lastCalculatedScale = calculatedScale)
+      }));
+    }
   }
 };
 
@@ -471,6 +516,10 @@ var PDFViewerPageView = function PDFViewerPageView(pdfViewer, page) {
   
   this.updateViewportSize();
   this._viewport = null;
+
+  var actualViewport = page.getViewport(1.0, page.rotate);
+  this._actualWidth  = Math.round(actualViewport.width);
+  this._actualHeight = Math.round(actualViewport.height);
 
   pdfViewer.getScrollView().$content.append($element);
 };
@@ -503,6 +552,14 @@ PDFViewerPageView.prototype = {
   
   getHeight: function() { return this._height; },
   
+  _actualWidth: 0,
+
+  getActualWidth: function() { return this._actualWidth; },
+
+  _actualHeight: 0,
+
+  getActualHeight: function() { return this._actualHeight; },
+
   _textLayer: null,
   
   getTextLayer: function() { return this._textLayer; },

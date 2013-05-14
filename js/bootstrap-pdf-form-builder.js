@@ -5,15 +5,21 @@ var PDFFormBuilder = function PDFFormBuilder(pdfViewer) {
 
   this._pdfViewer = pdfViewer;
 
+  var $panel = this.$panel = $('<div class="pdf-form-builder-panel"/>').prependTo(pdfViewer.$viewerContainer);
+  this.setFocusedFormField(null);
+
   var self = pdfViewer._formBuilder = this;
 
   pdfViewer.getFormBuilder = function() { return this._formBuilder; };
 
+  var formLayer = this._formLayer = new PDFFormLayer(this);
+
+  var scale = this._scale = { x: 1, y: 1 };
+
   var $navbarContainer = pdfViewer.$navbarContainer;
   var $navbarLeft = pdfViewer.$navbarLeft;
 
-  $('<li class="divider"/>').appendTo($navbarLeft);
-
+  $('<li><a href="#properties" rel="tooltip" title="Toggle Properties"><i class="icon-list-alt"/></a></li>').appendTo($navbarLeft);
   $('<li><a href="#text-field" rel="tooltip" title="Text Field"><i class="icon-edit"/></a></li>').appendTo($navbarLeft);
   $('<li><a href="#checkbox" rel="tooltip" title="Checkbox"><i class="icon-check"/></a></li>').appendTo($navbarLeft);
   
@@ -22,16 +28,22 @@ var PDFFormBuilder = function PDFFormBuilder(pdfViewer) {
 
     var $button = $(this);
     var href = $button.attr('href');
-    
+    var position = pdfViewer.getScrollView().getPosition();
+
     switch (href) {
+      case '#properties':
+        (function() {
+          return (self._panelOpen) ? self.closePanel() : self.openPanel();
+        })();
+        break;
       case '#text-field':
         (function() {
-          var field = new PDFFormField(pdfViewer);
+          var field = new PDFFormField(formLayer, position.x + 50, position.y + 50, 100, 40);
         })();
         break;
       case '#checkbox':
         (function() {
-          var field = new PDFFormField(pdfViewer);
+          var field = new PDFFormField(formLayer, position.x + 50, position.y + 50, 40, 40);
         })();
         break;
       default:
@@ -41,38 +53,127 @@ var PDFFormBuilder = function PDFFormBuilder(pdfViewer) {
 
   var isTouchSupported = !!('ontouchstart' in window);
   pdfViewer.$element.on(isTouchSupported ? 'touchstart' : 'mousedown', function(evt) {
-    pdfViewer.$element.find('.pdf-form-field-focus').each(function(index, element) {
+    formLayer.$element.find('.pdf-form-field-focus').each(function(index, element) {
       var formField = element.formField;
       if (!formField) return;
-console.log('a');
+
       formField.setFocused(false);
     });
   });
 
-  pdfViewer.$element.delegate('.pdf-form-field', isTouchSupported ? 'touchstart' : 'mousedown', function(evt) {
+  formLayer.$element.delegate('.pdf-form-field', isTouchSupported ? 'touchstart' : 'mousedown', function(evt) {
     var formField = this.formField;
     if (!formField) return;
 
-    evt.stopImmediatePropagation();
-console.log('b');
     formField.setFocused(true);
+    formField._mouseDownHandler.call(formField.element, evt);
+
+    evt.stopImmediatePropagation();
+  });
+
+  pdfViewer.$element.on(PDFViewer.EventType.ScaleChange, function(evt) {
+    var width  = pdfViewer.getActualWidth();
+    var height = pdfViewer.getActualHeight();
+    var margin = pdfViewer.getNumberOfPages() * 10;
+    var scaleX = scale.x = evt.calculatedScale;
+    var scaleY = scale.y = ((height * scaleX) + margin) / height;
+
+    formLayer.$element.css({
+      'margin-left': '-' + (width  / 2) + 'px',
+      'width':  width  + 'px',
+      'height': height + 'px',
+      '-webkit-transform': 'scale(' + scaleX + ',' + scaleY + ')',
+         '-moz-transform': 'scale(' + scaleX + ',' + scaleY + ')',
+          '-ms-transform': 'scale(' + scaleX + ',' + scaleY + ')',
+           '-o-transform': 'scale(' + scaleX + ',' + scaleY + ')',
+              'transform': 'scale(' + scaleX + ',' + scaleY + ')'
+    });
   });
 };
 
 PDFFormBuilder.prototype = {
   constructor: PDFFormBuilder,
 
-  _pdfViewer: null,
+  $panel: null,
 
-  _focusedFormField: null
+  _pdfViewer: null,
+  _formLayer: null,
+
+  _focusedFormField: null,
+
+  getFocusedFormField: function() { return this._focusedFormField; },
+
+  setFocusedFormField: function(formField) {
+    this._focusedFormField = formField;
+
+    if (formField) {
+      this.$panel.html('<h5>Text Field</h5>');
+    }
+
+    else {
+      this.$panel.html('<p>No form field selected</p>');
+    }
+  },
+
+  _scale: null,
+
+  getScale: function() { return this._scale; },
+
+  _panelOpen: false,
+
+  getPanelOpen: function() { return this._panelOpen; },
+
+  openPanel: function() {
+    if (this._panelOpen) return;
+
+    this._panelOpen = true;
+    this.$panel.addClass('pdf-form-builder-panel-open');
+
+    $(window).trigger('resize');
+  },
+
+  closePanel: function() {
+    if (!this._panelOpen) return;
+
+    this._panelOpen = false;
+    this.$panel.removeClass('pdf-form-builder-panel-open');
+
+    $(window).trigger('resize');
+  }
 };
 
-var PDFFormField = function PDFFormField(pdfViewer) {
-  if (!(pdfViewer instanceof PDFViewer)) return console.error("Invalid instance of PDFViewer", pdfViewer);
+var PDFFormLayer = function PDFFormLayer(formBuilder) {
+  if (!(formBuilder instanceof PDFFormBuilder)) return console.error("Invalid instance of PDFFormBuilder", formBuilder);
 
-  this._pdfViewer = pdfViewer;
+  this._formBuilder = formBuilder;
 
-  var $element = this.$element = $('<div class="pdf-form-field"/>').appendTo(pdfViewer.getScrollView().$content);
+  var $element = this.$element = $('<div class="pdf-form-layer"/>').appendTo(formBuilder._pdfViewer.getScrollView().$content);
+  var element  = this.element  = $element[0];
+
+  var self = element.formLayer = this;
+
+  var formFields = this._formFields = [];
+};
+
+PDFFormLayer.prototype = {
+  constructor: PDFFormLayer,
+
+  _pdfViewer: null,
+
+  element: null,
+  $element: null,
+
+  _formFields: null,
+
+  getFormFields: function() { return this._formFields; }
+};
+
+var PDFFormField = function PDFFormField(formLayer, x, y, w, h) {
+  if (!(formLayer instanceof PDFFormLayer)) return console.error("Invalid instance of PDFFormLayer", formLayer);
+
+  this._formLayer = formLayer;
+
+  var $element = this.$element = $('<div class="pdf-form-field"/>').appendTo(formLayer.$element);
   var element  = this.element  = $element[0];
 
   var self = element.formField = this;
@@ -94,11 +195,11 @@ var PDFFormField = function PDFFormField(pdfViewer) {
     handle.handleType = PDFFormField.HandleType[handleType];
   }
 
-  var position = this._position = { x: 0, y: 0 };
-  var size     = this._size     = { w: 0, h: 0 };
+  var position = this._position = { x: x || 100, y: y || 100 };
+  var size     = this._size     = { w: w || 100, h: h || 100 };
 
-  this.setPosition(40, 40);
-  this.setSize(100, 50);
+  this.setPosition(position.x, position.y);
+  this.setSize(size.w, size.h);
 };
 
 PDFFormField.EventType = {
@@ -111,7 +212,7 @@ PDFFormField.HandleType = { N: 'n', NE: 'ne', E: 'e', SE: 'se', S: 's', SW: 'sw'
 PDFFormField.prototype = {
   constructor: PDFFormField,
 
-  _pdfViewer: null,
+  _formLayer: null,
 
   element: null,
   $element: null,
@@ -149,6 +250,10 @@ PDFFormField.prototype = {
 
       var mousePosition = PDFViewer.Util.getPositionForEvent(evt, formField._lastTouchIdentifier);
       var mouseDelta    = PDFViewer.Util.getDeltaForPositions(mousePosition, formField._lastMousePosition);
+
+      var scale = formField._formLayer._formBuilder.getScale();
+      mouseDelta.x /= scale.x;
+      mouseDelta.y /= scale.y;
 
       if (isMoving) {
         formField.addToPosition(mouseDelta.x, mouseDelta.y);
@@ -257,13 +362,16 @@ PDFFormField.prototype = {
   setFocused: function(focused) {
     if (this._focused === focused) return;
     
-    var formBuilder = this._pdfViewer.getFormBuilder();
+    var formBuilder = this._formLayer._formBuilder;
     var isTouchSupported = !!('ontouchstart' in window);
     var $element = this.$element;
 
     if ((this._focused = focused)) {
-      if (formBuilder._focusedFormField && formBuilder._focusedFormField !== this) formBuilder._focusedFormField.setFocused(false);
-      formBuilder._focusedFormField = this;
+      if (formBuilder._focusedFormField && formBuilder._focusedFormField !== this) {
+        formBuilder._focusedFormField.setFocused(false);
+      }
+      
+      formBuilder.setFocusedFormField(this);
       
       $element.addClass('pdf-form-field-focus');
       $element.on(isTouchSupported ? 'touchstart' : 'mousedown', this._mouseDownHandler);
@@ -274,6 +382,8 @@ PDFFormField.prototype = {
     }
 
     else {
+      formBuilder.setFocusedFormField(null);
+
       $element.removeClass('pdf-form-field-focus');
       $element.off(isTouchSupported ? 'touchstart' : 'mousedown', this._mouseDownHandler);
 
