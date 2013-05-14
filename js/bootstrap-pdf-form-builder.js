@@ -11,6 +11,8 @@ var PDFFormBuilder = function PDFFormBuilder(pdfViewer) {
 
   var formLayer = this._formLayer = new PDFFormLayer(this);
 
+  var scale = this._scale = { x: 1, y: 1 };
+
   var $navbarContainer = pdfViewer.$navbarContainer;
   var $navbarLeft = pdfViewer.$navbarLeft;
 
@@ -61,21 +63,21 @@ var PDFFormBuilder = function PDFFormBuilder(pdfViewer) {
   });
 
   pdfViewer.$element.on(PDFViewer.EventType.ScaleChange, function(evt) {
-    var scale  = evt.calculatedScale;
     var width  = pdfViewer.getActualWidth();
     var height = pdfViewer.getActualHeight();
     var margin = pdfViewer.getNumberOfPages() * 10;
-    var yScale = ((height * scale) + margin) / height;
+    var scaleX = scale.x = evt.calculatedScale;
+    var scaleY = scale.y = ((height * scaleX) + margin) / height;
 
     formLayer.$element.css({
       'margin-left': '-' + (width  / 2) + 'px',
       'width':  width  + 'px',
       'height': height + 'px',
-      '-webkit-transform': 'scale(' + scale + ',' + yScale + ')',
-         '-moz-transform': 'scale(' + scale + ',' + yScale + ')',
-          '-ms-transform': 'scale(' + scale + ',' + yScale + ')',
-           '-o-transform': 'scale(' + scale + ',' + yScale + ')',
-              'transform': 'scale(' + scale + ',' + yScale + ')'
+      '-webkit-transform': 'scale(' + scaleX + ',' + scaleY + ')',
+         '-moz-transform': 'scale(' + scaleX + ',' + scaleY + ')',
+          '-ms-transform': 'scale(' + scaleX + ',' + scaleY + ')',
+           '-o-transform': 'scale(' + scaleX + ',' + scaleY + ')',
+              'transform': 'scale(' + scaleX + ',' + scaleY + ')'
     });
   });
 };
@@ -86,7 +88,11 @@ PDFFormBuilder.prototype = {
   _pdfViewer: null,
   _formLayer: null,
 
-  _focusedFormField: null
+  _focusedFormField: null,
+
+  _scale: null,
+
+  getScale: function() { return this._scale; }
 };
 
 var PDFFormLayer = function PDFFormLayer(formBuilder) {
@@ -197,6 +203,10 @@ PDFFormField.prototype = {
 
       var mousePosition = PDFViewer.Util.getPositionForEvent(evt, formField._lastTouchIdentifier);
       var mouseDelta    = PDFViewer.Util.getDeltaForPositions(mousePosition, formField._lastMousePosition);
+
+      var scale = formField._formLayer._formBuilder.getScale();
+      mouseDelta.x /= scale.x;
+      mouseDelta.y /= scale.y;
 
       if (isMoving) {
         formField.addToPosition(mouseDelta.x, mouseDelta.y);
