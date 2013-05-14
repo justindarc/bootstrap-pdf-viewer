@@ -46,7 +46,7 @@ var PDFFormBuilder = function PDFFormBuilder(pdfViewer) {
 
   var isTouchSupported = !!('ontouchstart' in window);
   pdfViewer.$element.on(isTouchSupported ? 'touchstart' : 'mousedown', function(evt) {
-    pdfViewer.$element.find('.pdf-form-field-focus').each(function(index, element) {
+    formLayer.$element.find('.pdf-form-field-focus').each(function(index, element) {
       var formField = element.formField;
       if (!formField) return;
 
@@ -54,7 +54,7 @@ var PDFFormBuilder = function PDFFormBuilder(pdfViewer) {
     });
   });
 
-  pdfViewer.$element.delegate('.pdf-form-field', isTouchSupported ? 'touchstart' : 'mousedown', function(evt) {
+  formLayer.$element.delegate('.pdf-form-field', isTouchSupported ? 'touchstart' : 'mousedown', function(evt) {
     var formField = this.formField;
     if (!formField) return;
 
