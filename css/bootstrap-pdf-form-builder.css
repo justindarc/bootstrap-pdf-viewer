@@ -11,9 +11,9 @@
   position: absolute;
   padding: 10px;
   top: 0;
-  left: -280px;
+  left: -200px;
   bottom: 0;
-  width: 260px;
+  width: 180px;
   height: auto;
   z-index: 2;
   overflow: hidden;
@@ -34,7 +34,7 @@
 }
 
 .pdf-form-builder-panel.pdf-form-builder-panel-open + .pdf-viewer-page-view-container {
-  left: 280px;
+  left: 200px;
 }
 
 .pdf-form-builder-panel h5 {

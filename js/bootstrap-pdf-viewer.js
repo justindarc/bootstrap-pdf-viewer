@@ -31,7 +31,7 @@ var PDFViewer = function PDFViewer(element) {
   var $navbarRight = this.$navbarRight = $('<ul class="nav pull-right"/>').appendTo($navbarInner);
   
   $('<li class="dropdown">' +
-    '<a href="#" class="dropdown-toggle" data-toggle="dropdown"><i class="icon-zoom-in"/> Zoom <b class="caret"/></a>' +
+    '<a href="#" class="dropdown-toggle" data-toggle="dropdown"><i class="icon-zoom-in"/> <b class="caret"/></a>' +
     '<ul class="dropdown-menu">' +
       '<li><a href="#zoom" data-value="' + PDFViewer.Scale.AUTO + '"><i class="icon-ok"/> Automatic</a></li>' +
       '<li><a href="#zoom" data-value="' + PDFViewer.Scale.PAGE_WIDTH + '"><i/> Page Width</a></li>' +
@@ -48,7 +48,8 @@ var PDFViewer = function PDFViewer(element) {
     '</ul>' +
   '</li>').appendTo($navbarRight);
 
-  $('<li><a href="#full-screen" rel="tooltip" title="Full Screen"><i class="icon-fullscreen"/> Full Screen</a></li>').appendTo($navbarRight);
+  var isTouchSupported = !!('ontouchstart' in window);
+  if (!isTouchSupported) $('<li><a href="#full-screen" rel="tooltip" title="Full Screen"><i class="icon-fullscreen"/></a></li>').appendTo($navbarRight);
   
   $navbarInner.find('[rel="tooltip"], [data-rel="tooltip"]').tooltip({
     delay: { show: 300, hide: 150 },
@@ -138,7 +139,7 @@ var PDFViewer = function PDFViewer(element) {
 PDFViewer.MINIMUM_HEIGHT    = 400;
 PDFViewer.PAGE_SPACING      = 10;
 PDFViewer.UPDATE_TIMEOUT    = 100;
-PDFViewer.SCROLLBAR_PADDING = 40;
+PDFViewer.SCROLLBAR_PADDING = 20;
 PDFViewer.RESIZE_TIMEOUT    = 1000;
 
 PDFViewer.RenderingStateType = {
