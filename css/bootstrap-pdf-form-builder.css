@@ -1,11 +1,20 @@
+.pdf-form-layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: auto;
+  height: auto;
+}
+
 .pdf-form-field {
-  background: rgba(255, 255, 255, 0.8);
+  background: rgba(252, 253, 254, 0.85);
   border: 1px dashed #d9d9d9;
   position: absolute;
   top: 0;
   left: 0;
   width: auto;
   height: auto;
+  z-index: 2;
   -webkit-user-select: none;
      -moz-user-select: none;
       -ms-user-select: none;
@@ -16,16 +25,18 @@
       -ms-transform: translate(0, 0);
        -o-transform: translate(0, 0);
           transform: translate(0, 0);
-  -webkit-transition: border 0.2s ease;
-     -moz-transition: border 0.2s ease;
-      -ms-transition: border 0.2s ease;
-       -o-transition: border 0.2s ease;
-          transition: border 0.2s ease;
+  -webkit-transition: background 0.3s ease, border 0.3s ease;
+     -moz-transition: background 0.3s ease, border 0.3s ease;
+      -ms-transition: background 0.3s ease, border 0.3s ease;
+       -o-transition: background 0.3s ease, border 0.3s ease;
+          transition: background 0.3s ease, border 0.3s ease;
 }
 
 .pdf-form-field.pdf-form-field-focus {
-  border: 1px dashed #44687c;
+  background: rgba(252, 253, 254, 0.95);
+  border: 1px dashed #6486a8;
   cursor: move;
+  z-index: 22;
 }
 
 .pdf-form-field::after {
@@ -42,20 +53,20 @@
 
 .pdf-form-field-handle {
   background: #eef9fe;
-  border: 1px solid #668c9f;
+  border: 1px solid #a8c8df;
   opacity: 0;
   visibility: hidden;
   position: absolute;
-  width: 9px;
-  height: 9px;
-  -webkit-box-shadow: 0 0 2px 1px rgba(0, 128, 224, 0.4);
-     -moz-box-shadow: 0 0 2px 1px rgba(0, 128, 224, 0.4);
-          box-shadow: 0 0 2px 1px rgba(0, 128, 224, 0.4);
-  -webkit-transition: opacity 0.2s ease, visibility 0s linear 0.2s;
-     -moz-transition: opacity 0.2s ease, visibility 0s linear 0.2s;
-      -ms-transition: opacity 0.2s ease, visibility 0s linear 0.2s;
-       -o-transition: opacity 0.2s ease, visibility 0s linear 0.2s;
-          transition: opacity 0.2s ease, visibility 0s linear 0.2s;
+  width: 10px;
+  height: 10px;
+  -webkit-box-shadow: 0 0 3px 1px rgba(0, 128, 224, 0.3);
+     -moz-box-shadow: 0 0 3px 1px rgba(0, 128, 224, 0.3);
+          box-shadow: 0 0 3px 1px rgba(0, 128, 224, 0.3);
+  -webkit-transition: opacity 0.3s ease, visibility 0s linear 0.3s;
+     -moz-transition: opacity 0.3s ease, visibility 0s linear 0.3s;
+      -ms-transition: opacity 0.3s ease, visibility 0s linear 0.3s;
+       -o-transition: opacity 0.3s ease, visibility 0s linear 0.3s;
+          transition: opacity 0.3s ease, visibility 0s linear 0.3s;
 }
 
 .pdf-form-field-handle::after {
@@ -63,8 +74,8 @@
   position: absolute;
   top: -11px;
   left: -11px;
-  width: 29px;
-  height: 29px;
+  width: 31px;
+  height: 31px;
 }
 
 .pdf-form-field.pdf-form-field-focus > .pdf-form-field-handle {

@@ -347,11 +347,14 @@ PDFViewer.prototype = {
   
   getPageViews: function() { return this._pageViews; },
   
+  _currentPageViewIndex: -1,
+
   getCurrentPageView: function() {
     var pageViews = this._pageViews;
-    if (!pageViews || pageViews.length === 0) return null;
+    var index = this._currentPageViewIndex;
+    if (index < 0 || !pageViews || pageViews.length === 0) return null;
 
-    return pageViews[0];
+    return pageViews[index];
   },
 
   _numberOfPages: 0,
@@ -412,6 +415,8 @@ PDFViewer.prototype = {
     }
     
     if (minimumViewablePageIndex === -1 || maximumViewablePageIndex === -1) return;
+
+    this._currentPageViewIndex = minimumViewablePageIndex;
 
     for (i = 0, length = pageViews.length; i < length; i++) {
       pageView = pageViews[i];
