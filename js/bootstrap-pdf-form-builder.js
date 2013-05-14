@@ -14,8 +14,6 @@ var PDFFormBuilder = function PDFFormBuilder(pdfViewer) {
   var $navbarContainer = pdfViewer.$navbarContainer;
   var $navbarLeft = pdfViewer.$navbarLeft;
 
-  $('<li class="divider"/>').appendTo($navbarLeft);
-
   $('<li><a href="#text-field" rel="tooltip" title="Text Field"><i class="icon-edit"/></a></li>').appendTo($navbarLeft);
   $('<li><a href="#checkbox" rel="tooltip" title="Checkbox"><i class="icon-check"/></a></li>').appendTo($navbarLeft);
   
@@ -25,8 +23,6 @@ var PDFFormBuilder = function PDFFormBuilder(pdfViewer) {
     var $button = $(this);
     var href = $button.attr('href');
     var position = pdfViewer.getScrollView().getPosition();
-
-    console.log(pdfViewer.getCurrentPageView());
 
     switch (href) {
       case '#text-field':
@@ -62,6 +58,25 @@ var PDFFormBuilder = function PDFFormBuilder(pdfViewer) {
     formField._mouseDownHandler.call(formField.element, evt);
 
     evt.stopImmediatePropagation();
+  });
+
+  pdfViewer.$element.on(PDFViewer.EventType.ScaleChange, function(evt) {
+    var scale  = evt.calculatedScale;
+    var width  = pdfViewer.getActualWidth();
+    var height = pdfViewer.getActualHeight();
+    var margin = pdfViewer.getNumberOfPages() * 10;
+    var yScale = ((height * scale) + margin) / height;
+
+    formLayer.$element.css({
+      'margin-left': '-' + (width  / 2) + 'px',
+      'width':  width  + 'px',
+      'height': height + 'px',
+      '-webkit-transform': 'scale(' + scale + ',' + yScale + ')',
+         '-moz-transform': 'scale(' + scale + ',' + yScale + ')',
+          '-ms-transform': 'scale(' + scale + ',' + yScale + ')',
+           '-o-transform': 'scale(' + scale + ',' + yScale + ')',
+              'transform': 'scale(' + scale + ',' + yScale + ')'
+    });
   });
 };
 

@@ -1,14 +1,20 @@
 .pdf-form-layer {
   position: absolute;
-  top: 0;
-  left: 0;
+  top: 10px;
+  left: 50%;
   width: auto;
   height: auto;
+  z-index: 2;
+  -webkit-transform-origin: 50% 0;
+     -moz-transform-origin: 50% 0;
+      -ms-transform-origin: 50% 0;
+       -o-transform-origin: 50% 0;
+          transform-origin: 50% 0;
 }
 
 .pdf-form-field {
-  background: rgba(252, 253, 254, 0.85);
-  border: 1px dashed #d9d9d9;
+  background: rgba(250, 251, 252, 0.85);
+  border: 1px dashed #c6c6c6;
   position: absolute;
   top: 0;
   left: 0;

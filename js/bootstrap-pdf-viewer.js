@@ -46,7 +46,7 @@ var PDFViewer = function PDFViewer(element) {
       '<li><a href="#zoom" data-value="' + PDFViewer.Scale.PERCENT_200 + '"><i/> 200%</a></li>' +
       '<li><a href="#zoom" data-value="' + PDFViewer.Scale.PERCENT_300 + '"><i/> 300%</a></li>' +
     '</ul>' +
-  '</li>').appendTo($navbarLeft);
+  '</li>').appendTo($navbarRight);
 
   $('<li><a href="#full-screen" rel="tooltip" title="Full Screen"><i class="icon-fullscreen"/> Full Screen</a></li>').appendTo($navbarRight);
   
@@ -203,6 +203,10 @@ PDFViewer.Util = {
   }
 };
 
+PDFViewer.EventType = {
+  ScaleChange: 'PDFViewer:ScaleChange',
+};
+
 PDFViewer.prototype = {
   constructor: PDFViewer,
   
@@ -343,6 +347,12 @@ PDFViewer.prototype = {
     this.redraw();
   },
 
+  _lastCalculatedScale: 0,
+
+  getCalculatedScale: function() {
+    return (this._pageViews.length > 0) ? this.calculateScale(this._pageViews[0]) : 1;
+  },
+
   _pageViews: null,
   
   getPageViews: function() { return this._pageViews; },
@@ -374,12 +384,23 @@ PDFViewer.prototype = {
     
     var promise = PDFJS.Promise.all(pages);
     promise.then(function(promisedPages) {
-      for (var i = 0, length = promisedPages.length; i < length; i++) {
-        pageViews.push(new PDFViewerPageView(self, promisedPages[i]));
+      var actualHeight = 0;
+      for (var i = 0, length = promisedPages.length, pageView; i < length; i++) {
+        pageViews.push(pageView = new PDFViewerPageView(self, promisedPages[i]));
+        actualHeight += pageView.getActualHeight();
+
+        if (i === 0) self._actualWidth = pageView.getActualWidth();
       }
       
+      self._actualHeight = actualHeight;
+
       self.optimizeHeight();
       self.updateView();
+
+      self.$element.trigger($.Event(PDFViewer.EventType.ScaleChange, {
+        scale: self._scale,
+        calculatedScale: (self._lastCalculatedScale = self.getCalculatedScale())
+      }));
     });
   },
   
@@ -448,6 +469,14 @@ PDFViewer.prototype = {
     }
   },
 
+  _actualWidth: 0,
+
+  getActualWidth: function() { return this._actualWidth; },
+
+  _actualHeight: 0,
+
+  getActualHeight: function() { return this._actualHeight; },
+
   redraw: function() {
     this.optimizeHeight();
 
@@ -460,6 +489,14 @@ PDFViewer.prototype = {
     }
     
     this.updateView();
+
+    var calculatedScale = this.getCalculatedScale();
+    if (calculatedScale !== this._lastCalculatedScale) {
+      this.$element.trigger($.Event(PDFViewer.EventType.ScaleChange, {
+        scale: this._scale,
+        calculatedScale: (this._lastCalculatedScale = calculatedScale)
+      }));
+    }
   }
 };
 
@@ -476,6 +513,10 @@ var PDFViewerPageView = function PDFViewerPageView(pdfViewer, page) {
   
   this.updateViewportSize();
   this._viewport = null;
+
+  var actualViewport = page.getViewport(1.0, page.rotate);
+  this._actualWidth  = Math.round(actualViewport.width);
+  this._actualHeight = Math.round(actualViewport.height);
 
   pdfViewer.getScrollView().$content.append($element);
 };
@@ -508,6 +549,14 @@ PDFViewerPageView.prototype = {
   
   getHeight: function() { return this._height; },
   
+  _actualWidth: 0,
+
+  getActualWidth: function() { return this._actualWidth; },
+
+  _actualHeight: 0,
+
+  getActualHeight: function() { return this._actualHeight; },
+
   _textLayer: null,
   
   getTextLayer: function() { return this._textLayer; },
