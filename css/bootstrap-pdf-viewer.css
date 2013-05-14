@@ -21,7 +21,7 @@ html.pdf-viewer-full-screen > body {
 }
 
 .pdf-viewer {
-  background-color: #909090;
+  background: #909090;
   border: 1px solid #707070;
   margin: 0 0 20px 0;
   height: 400px;
@@ -75,9 +75,21 @@ html.pdf-viewer-full-screen > body {
   white-space: nowrap;
 }
 
-.pdf-viewer-page-view-container {
+.pdf-viewer-container {
   position: absolute;
   top: 41px;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  width: auto;
+  height: auto;
+  z-index: 1;
+  overflow: hidden;
+}
+
+.pdf-viewer-page-view-container {
+  position: absolute;
+  top: 0;
   right: 0;
   bottom: 0;
   left: 0;

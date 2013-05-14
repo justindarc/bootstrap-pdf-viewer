@@ -115,7 +115,8 @@ var PDFViewer = function PDFViewer(element) {
     }, PDFViewer.RESIZE_TIMEOUT);
   });
   
-  var $pageViewContainer = this.$pageViewContainer = $('<div class="pdf-viewer-page-view-container pdf-scroll-view"/>').appendTo($element);
+  var $viewerContainer   = this.$viewerContainer   = $('<div class="pdf-viewer-container"/>').appendTo($element);
+  var $pageViewContainer = this.$pageViewContainer = $('<div class="pdf-viewer-page-view-container pdf-scroll-view"/>').appendTo($viewerContainer);
   
   var scrollView = this._scrollView = new PDFScrollView($pageViewContainer);
 
@@ -216,6 +217,7 @@ PDFViewer.prototype = {
   $navbarContainer: null,
   $navbarLeft: null,
   $navbarRight: null,
+  $viewerContainer: null,
   $pageViewContainer: null,
   
   _scrollView: null,

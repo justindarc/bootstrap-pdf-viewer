@@ -5,6 +5,9 @@ var PDFFormBuilder = function PDFFormBuilder(pdfViewer) {
 
   this._pdfViewer = pdfViewer;
 
+  var $panel = this.$panel = $('<div class="pdf-form-builder-panel"/>').prependTo(pdfViewer.$viewerContainer);
+  this.setFocusedFormField(null);
+
   var self = pdfViewer._formBuilder = this;
 
   pdfViewer.getFormBuilder = function() { return this._formBuilder; };
@@ -16,6 +19,7 @@ var PDFFormBuilder = function PDFFormBuilder(pdfViewer) {
   var $navbarContainer = pdfViewer.$navbarContainer;
   var $navbarLeft = pdfViewer.$navbarLeft;
 
+  $('<li><a href="#properties" rel="tooltip" title="Toggle Properties"><i class="icon-list-alt"/></a></li>').appendTo($navbarLeft);
   $('<li><a href="#text-field" rel="tooltip" title="Text Field"><i class="icon-edit"/></a></li>').appendTo($navbarLeft);
   $('<li><a href="#checkbox" rel="tooltip" title="Checkbox"><i class="icon-check"/></a></li>').appendTo($navbarLeft);
   
@@ -27,6 +31,11 @@ var PDFFormBuilder = function PDFFormBuilder(pdfViewer) {
     var position = pdfViewer.getScrollView().getPosition();
 
     switch (href) {
+      case '#properties':
+        (function() {
+          return (self._panelOpen) ? self.closePanel() : self.openPanel();
+        })();
+        break;
       case '#text-field':
         (function() {
           var field = new PDFFormField(formLayer, position.x + 50, position.y + 50, 100, 40);
@@ -85,14 +94,52 @@ var PDFFormBuilder = function PDFFormBuilder(pdfViewer) {
 PDFFormBuilder.prototype = {
   constructor: PDFFormBuilder,
 
+  $panel: null,
+
   _pdfViewer: null,
   _formLayer: null,
 
   _focusedFormField: null,
 
+  getFocusedFormField: function() { return this._focusedFormField; },
+
+  setFocusedFormField: function(formField) {
+    this._focusedFormField = formField;
+
+    if (formField) {
+      this.$panel.html('<h5>Text Field</h5>');
+    }
+
+    else {
+      this.$panel.html('<p>No form field selected</p>');
+    }
+  },
+
   _scale: null,
 
-  getScale: function() { return this._scale; }
+  getScale: function() { return this._scale; },
+
+  _panelOpen: false,
+
+  getPanelOpen: function() { return this._panelOpen; },
+
+  openPanel: function() {
+    if (this._panelOpen) return;
+
+    this._panelOpen = true;
+    this.$panel.addClass('pdf-form-builder-panel-open');
+
+    $(window).trigger('resize');
+  },
+
+  closePanel: function() {
+    if (!this._panelOpen) return;
+
+    this._panelOpen = false;
+    this.$panel.removeClass('pdf-form-builder-panel-open');
+
+    $(window).trigger('resize');
+  }
 };
 
 var PDFFormLayer = function PDFFormLayer(formBuilder) {
@@ -320,8 +367,11 @@ PDFFormField.prototype = {
     var $element = this.$element;
 
     if ((this._focused = focused)) {
-      if (formBuilder._focusedFormField && formBuilder._focusedFormField !== this) formBuilder._focusedFormField.setFocused(false);
-      formBuilder._focusedFormField = this;
+      if (formBuilder._focusedFormField && formBuilder._focusedFormField !== this) {
+        formBuilder._focusedFormField.setFocused(false);
+      }
+      
+      formBuilder.setFocusedFormField(this);
       
       $element.addClass('pdf-form-field-focus');
       $element.on(isTouchSupported ? 'touchstart' : 'mousedown', this._mouseDownHandler);
@@ -332,6 +382,8 @@ PDFFormField.prototype = {
     }
 
     else {
+      formBuilder.setFocusedFormField(null);
+
       $element.removeClass('pdf-form-field-focus');
       $element.off(isTouchSupported ? 'touchstart' : 'mousedown', this._mouseDownHandler);
 
