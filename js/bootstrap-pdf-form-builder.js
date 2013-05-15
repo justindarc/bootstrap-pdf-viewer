@@ -20,7 +20,7 @@ var PDFFormBuilder = function PDFFormBuilder(pdfViewer) {
   var $navbarLeft = pdfViewer.$navbarLeft;
 
   $('<li><a href="#properties" rel="tooltip" title="Toggle Properties"><i class="icon-list-alt"/></a></li>').appendTo($navbarLeft);
-  $('<li><a href="#text-field" rel="tooltip" title="Text Field"><i class="icon-edit"/></a></li>').appendTo($navbarLeft);
+  $('<li><a href="#textbox" rel="tooltip" title="Text Field"><i class="icon-edit"/></a></li>').appendTo($navbarLeft);
   $('<li><a href="#checkbox" rel="tooltip" title="Checkbox"><i class="icon-check"/></a></li>').appendTo($navbarLeft);
   
   $navbarContainer.delegate('a', 'click', function(evt) {
@@ -36,14 +36,14 @@ var PDFFormBuilder = function PDFFormBuilder(pdfViewer) {
           return (self._panelOpen) ? self.closePanel() : self.openPanel();
         })();
         break;
-      case '#text-field':
+      case '#textbox':
         (function() {
-          var field = new PDFFormField(formLayer, position.x + 50, position.y + 50, 100, 40);
+          var field = new PDFFormFieldTextBox(formLayer, position.x + 50, position.y + 50, 100, 40);
         })();
         break;
       case '#checkbox':
         (function() {
-          var field = new PDFFormField(formLayer, position.x + 50, position.y + 50, 40, 40);
+          var field = new PDFFormFieldCheckBox(formLayer, position.x + 50, position.y + 50, 40, 40);
         })();
         break;
       default:
@@ -52,7 +52,7 @@ var PDFFormBuilder = function PDFFormBuilder(pdfViewer) {
   });
 
   var isTouchSupported = !!('ontouchstart' in window);
-  pdfViewer.$element.on(isTouchSupported ? 'touchstart' : 'mousedown', function(evt) {
+  formLayer.$element.on(isTouchSupported ? 'touchstart' : 'mousedown', function(evt) {
     formLayer.$element.find('.pdf-form-field-focus').each(function(index, element) {
       var formField = element.formField;
       if (!formField) return;
@@ -107,11 +107,30 @@ PDFFormBuilder.prototype = {
     this._focusedFormField = formField;
 
     if (formField) {
-      this.$panel.html('<h5>Text Field</h5>');
+      this.$panel.html(
+        '<h4>Properties</h4>' +
+        '<form>' +
+          '<ul>' +
+            '<li>' +
+              '<h5>' + formField.getType() + '</h5>' +
+            '</li>' +
+            formField.getPropertiesForm() +
+          '</ul>' +
+        '</form>'
+      );
     }
 
     else {
-      this.$panel.html('<p>No form field selected</p>');
+      this.$panel.html(
+        '<h4>Properties</h4>' +
+        '<form>' +
+          '<ul>' +
+            '<li>' +
+              '<h5>No form field selected</h5>' +
+            '</li>' +
+          '</ul>' +
+        '</form>'
+      );
     }
   },
 
@@ -169,6 +188,7 @@ PDFFormLayer.prototype = {
 };
 
 var PDFFormField = function PDFFormField(formLayer, x, y, w, h) {
+  if (!formLayer) return;
   if (!(formLayer instanceof PDFFormLayer)) return console.error("Invalid instance of PDFFormLayer", formLayer);
 
   this._formLayer = formLayer;
@@ -177,6 +197,8 @@ var PDFFormField = function PDFFormField(formLayer, x, y, w, h) {
   var element  = this.element  = $element[0];
 
   var self = element.formField = this;
+
+  var properties = this._properties = {};
 
   var $handles = this.$handles = {
     N : $('<div class="pdf-form-field-handle pdf-form-field-handle-n"/>' ).appendTo($element),
@@ -216,6 +238,16 @@ PDFFormField.prototype = {
 
   element: null,
   $element: null,
+
+  _type: '',
+
+  getType: function() { return this._type; },
+
+  _properties: null,
+
+  getProperties: function() { return this._properties; },
+
+  getPropertiesForm: function() { return ''; },
 
   _isMoving: false,
   _isResizing: false,
@@ -363,8 +395,21 @@ PDFFormField.prototype = {
     if (this._focused === focused) return;
     
     var formBuilder = this._formLayer._formBuilder;
+    var properties  = this._properties;
     var isTouchSupported = !!('ontouchstart' in window);
     var $element = this.$element;
+
+    // Check if this form field is losing focus
+    if (this._focused && !focused) (function() {
+      var $panel = formBuilder.$panel;
+      var $form  = $panel.find('form');
+      var values = $form.serializeArray();
+      
+      for (var i = 0, length = values.length, value; i < length; i++) {
+        value = values[i];
+        properties[value.name] = value.value;
+      }
+    })();
 
     if ((this._focused = focused)) {
       if (formBuilder._focusedFormField && formBuilder._focusedFormField !== this) {
@@ -392,4 +437,53 @@ PDFFormField.prototype = {
       }));
     }
   }
+};
+
+var PDFFormFieldTextBox = function PDFFormFieldTextBox(formLayer, x, y, w, h) {
+  PDFFormField.prototype.constructor.apply(this, arguments);
+};
+
+PDFFormFieldTextBox.prototype = new PDFFormField();
+PDFFormFieldTextBox.prototype.constructor = PDFFormFieldTextBox;
+PDFFormFieldTextBox.prototype._type = 'Text Box';
+
+PDFFormFieldTextBox.prototype.getPropertiesForm = function() {
+  var properties = this._properties;
+  var html = '' +
+    '<li>' +
+      '<label>Name:</label>' +
+      '<input type="text" name="name" value="' + (properties.name || '') + '"/>' +
+    '</li>' +
+    '<li>' +
+      '<label>Placeholder:</label>' +
+      '<input type="text" name="placeholder" value="' + (properties.placeholder || '') + '"/>' +
+    '</li>';
+
+  return html;
+};
+
+var PDFFormFieldCheckBox = function PDFFormFieldCheckBox(formLayer, x, y, w, h) {
+  PDFFormField.prototype.constructor.apply(this, arguments);
+};
+
+PDFFormFieldCheckBox.prototype = new PDFFormField();
+PDFFormFieldCheckBox.prototype.constructor = PDFFormFieldCheckBox;
+PDFFormFieldCheckBox.prototype._type = 'Check Box';
+
+PDFFormFieldCheckBox.prototype.getPropertiesForm = function() {
+  var properties = this._properties;
+  var html = '' +
+    '<li>' +
+      '<label>Name:</label>' +
+      '<input type="text" name="name" value="' + (properties.name || '') + '"/>' +
+    '</li>' +
+    '<li>' +
+      '<label>Default:</label>' +
+      '<select name="default">' +
+        '<option value="0">Unchecked</option>' +
+        '<option value="1">Checked</option>' +
+      '</select>' +
+    '</li>';
+
+  return html;
 };

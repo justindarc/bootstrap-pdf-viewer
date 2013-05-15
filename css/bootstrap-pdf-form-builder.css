@@ -9,11 +9,10 @@
 .pdf-form-builder-panel {
   background: #e0e0e0;
   position: absolute;
-  padding: 10px;
   top: 0;
   left: -200px;
   bottom: 0;
-  width: 180px;
+  width: 200px;
   height: auto;
   z-index: 2;
   overflow: hidden;
@@ -37,8 +36,50 @@
   left: 200px;
 }
 
-.pdf-form-builder-panel h5 {
-  margin: 0 0 10px;
+.pdf-form-builder-panel h4 {
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+  color: #555;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.8);
+  margin: 0;
+  padding: 14px 14px 13px;
+}
+
+.pdf-form-builder-panel ul {
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pdf-form-builder-panel ul > li {
+  color: #555;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.8);
+  display: block;
+  font-weight: 500;
+  line-height: 20px;
+  margin: 0;
+  padding: 8px 14px 2px;
+}
+
+.pdf-form-builder-panel ul > li > h5 {
+  font-size: 12px;
+  margin: 0;
+}
+
+.pdf-form-builder-panel ul > li > label {
+  font-size: 12px;
+  margin: 0;
+}
+
+.pdf-form-builder-panel ul > li > input {
+  width: 160px;
+  margin: 0;
+}
+
+.pdf-form-builder-panel ul > li > select {
+  width: 174px;
+  margin: 0;
 }
 
 .pdf-form-layer {

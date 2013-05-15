@@ -20,13 +20,6 @@ html.pdf-viewer-full-screen > body {
   position: absolute; top: 0; left: 0; width: 100%; height: 100% !important; min-height: 100% !important; overflow: hidden;
 }
 
-/*@media (max-width: 767px) {
-  body {
-    padding-right: 0;
-    padding-left: 0;
-  }
-}*/
-
 .pdf-viewer {
   background: #909090;
   border: 1px solid #707070;
