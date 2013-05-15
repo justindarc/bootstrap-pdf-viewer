@@ -20,7 +20,9 @@ var PDFFormBuilder = function PDFFormBuilder(pdfViewer) {
   var $navbarLeft = pdfViewer.$navbarLeft;
 
   $('<li><a href="#properties" rel="tooltip" title="Toggle Properties"><i class="icon-list-alt"/></a></li>').appendTo($navbarLeft);
-  $('<li><a href="#text-field" rel="tooltip" title="Text Field"><i class="icon-edit"/></a></li>').appendTo($navbarLeft);
+  $('<li><a href="#save" rel="tooltip" title="Save"><i class="icon-save"/></a></li>').appendTo($navbarLeft);
+  $('<li><a href="#open" rel="tooltip" title="Open"><i class="icon-magic"/></a></li>').appendTo($navbarLeft);
+  $('<li><a href="#textbox" rel="tooltip" title="Text Field"><i class="icon-edit"/></a></li>').appendTo($navbarLeft);
   $('<li><a href="#checkbox" rel="tooltip" title="Checkbox"><i class="icon-check"/></a></li>').appendTo($navbarLeft);
   
   $navbarContainer.delegate('a', 'click', function(evt) {
@@ -36,14 +38,26 @@ var PDFFormBuilder = function PDFFormBuilder(pdfViewer) {
           return (self._panelOpen) ? self.closePanel() : self.openPanel();
         })();
         break;
-      case '#text-field':
+      case '#save':
         (function() {
-          var field = new PDFFormField(formLayer, position.x + 50, position.y + 50, 100, 40);
+          var serializedFields = JSON.stringify(self.serialize());
+          window.alert(serializedFields);
+        })();
+        break;
+      case '#open':
+        (function() {
+          var serializedFields = JSON.parse(window.prompt("Enter Form Field data in JSON format:"));
+          self.deserialize(serializedFields);
+        })();
+        break;
+      case '#textbox':
+        (function() {
+          var field = new PDFFormFieldTextBox(formLayer, position.x + 50, position.y + 50);
         })();
         break;
       case '#checkbox':
         (function() {
-          var field = new PDFFormField(formLayer, position.x + 50, position.y + 50, 40, 40);
+          var field = new PDFFormFieldCheckBox(formLayer, position.x + 50, position.y + 50);
         })();
         break;
       default:
@@ -52,7 +66,7 @@ var PDFFormBuilder = function PDFFormBuilder(pdfViewer) {
   });
 
   var isTouchSupported = !!('ontouchstart' in window);
-  pdfViewer.$element.on(isTouchSupported ? 'touchstart' : 'mousedown', function(evt) {
+  formLayer.$element.on(isTouchSupported ? 'touchstart' : 'mousedown', function(evt) {
     formLayer.$element.find('.pdf-form-field-focus').each(function(index, element) {
       var formField = element.formField;
       if (!formField) return;
@@ -89,6 +103,32 @@ var PDFFormBuilder = function PDFFormBuilder(pdfViewer) {
               'transform': 'scale(' + scaleX + ',' + scaleY + ')'
     });
   });
+
+  $panel.on('change', function(evt) {
+    var focusedFormField = self._focusedFormField;
+    if (focusedFormField) focusedFormField.updateProperties();
+  });
+
+  $panel.delegate('a', 'click', function(evt) {
+    evt.preventDefault();
+
+    var $button = $(this);
+    var href = $button.attr('href');
+
+    switch (href) {
+      case '#remove':
+        (function() {
+          var focusedFormField = self._focusedFormField;
+          if (!focusedFormField) return;
+
+          focusedFormField.remove();
+          self.setFocusedFormField(null);
+        })();
+        break;
+      default:
+        break;
+    }
+  });
 };
 
 PDFFormBuilder.prototype = {
@@ -107,11 +147,33 @@ PDFFormBuilder.prototype = {
     this._focusedFormField = formField;
 
     if (formField) {
-      this.$panel.html('<h5>Text Field</h5>');
+      this.$panel.html(
+        '<h4>Properties</h4>' +
+        '<form>' +
+          '<ul>' +
+            '<li>' +
+              '<h5>' + formField.getType() + '</h5>' +
+            '</li>' +
+            formField.getPropertiesForm() +
+            '<li>' +
+              '<a class="btn btn-danger" href="#remove"><i class="icon-trash"/> Remove Field</a>' +
+            '</li>' +
+          '</ul>' +
+        '</form>'
+      );
     }
 
     else {
-      this.$panel.html('<p>No form field selected</p>');
+      this.$panel.html(
+        '<h4>Properties</h4>' +
+        '<form>' +
+          '<ul>' +
+            '<li>' +
+              '<h5>No form field selected</h5>' +
+            '</li>' +
+          '</ul>' +
+        '</form>'
+      );
     }
   },
 
@@ -139,6 +201,42 @@ PDFFormBuilder.prototype = {
     this.$panel.removeClass('pdf-form-builder-panel-open');
 
     $(window).trigger('resize');
+  },
+
+  serialize: function() {
+    var serializedFields = [];
+    var formFields = this._formLayer._formFields;
+    var formField, matches, className;
+
+    for (var i = 0, length = formFields.length; i < length; i++) {
+      formField = formFields[i];
+      matches   = formField.constructor.toString().match(/function\s*(\w+)/);
+      className = matches.length === 2 ? matches[1] : 'PDFFormField';
+      
+      serializedFields.push({
+        type:       className,
+        position:   formField._position,
+        size:       formField._size,
+        properties: formField._properties
+      });
+    }
+
+    return serializedFields;
+  },
+
+  deserialize: function(serializedFields) {
+    var self = this;
+    for (var i = 0, length = serializedFields.length; i < length; i++) {
+      (function(serializedField) {
+        var formFieldClass = window[serializedField.type] || PDFFormField;
+        
+        var position  = serializedField.position;
+        var size      = serializedField.size;
+        var formField = new formFieldClass(self._formLayer, position.x, position.y, size.w, size.h);
+
+        formField.setProperties(serializedField.properties);
+      })(serializedFields[i]);
+    }
   }
 };
 
@@ -169,6 +267,7 @@ PDFFormLayer.prototype = {
 };
 
 var PDFFormField = function PDFFormField(formLayer, x, y, w, h) {
+  if (!formLayer) return;
   if (!(formLayer instanceof PDFFormLayer)) return console.error("Invalid instance of PDFFormLayer", formLayer);
 
   this._formLayer = formLayer;
@@ -176,7 +275,13 @@ var PDFFormField = function PDFFormField(formLayer, x, y, w, h) {
   var $element = this.$element = $('<div class="pdf-form-field"/>').appendTo(formLayer.$element);
   var element  = this.element  = $element[0];
 
+  this.$input = $('<input type="hidden"/>');
+
   var self = element.formField = this;
+
+  formLayer._formFields.push(this);
+
+  var properties = this._properties = {};
 
   var $handles = this.$handles = {
     N : $('<div class="pdf-form-field-handle pdf-form-field-handle-n"/>' ).appendTo($element),
@@ -195,8 +300,8 @@ var PDFFormField = function PDFFormField(formLayer, x, y, w, h) {
     handle.handleType = PDFFormField.HandleType[handleType];
   }
 
-  var position = this._position = { x: x || 100, y: y || 100 };
-  var size     = this._size     = { w: w || 100, h: h || 100 };
+  var position = this._position = { x: x || 100,                y: y || 100 };
+  var size     = this._size     = { w: w || this._defaultWidth, h: h || this._defaultHeight };
 
   this.setPosition(position.x, position.y);
   this.setSize(size.w, size.h);
@@ -216,6 +321,69 @@ PDFFormField.prototype = {
 
   element: null,
   $element: null,
+
+  $input: null,
+
+  _defaultWidth:  100,
+  _defaultHeight: 100,
+
+  _type: '',
+
+  getType: function() { return this._type; },
+
+  _properties: null,
+
+  getProperties: function() { return this._properties; },
+
+  setProperties: function(properties) {
+    this._properties = properties || {};
+    this.updateInput();
+  },
+
+  updateProperties: function() {
+    var $panel = this._formLayer._formBuilder.$panel;
+    var $form  = $panel.find('form');
+    var values = $form.serializeArray();
+    var properties = this._properties;
+    var i, length, name, value;
+
+    for (i = 0, length = values.length, name, value; i < length; i++) {
+      name  = values[i].name;
+      value = values[i].value;
+
+      if (value === 'true' ) value = true;
+      if (value === 'false') value = false;
+
+      properties[name] = value;
+    }
+
+    this.updateInput();
+  },
+
+  updateInput: function() {
+    var $input = this.$input;
+    var properties = this._properties;
+
+    for (name in properties) {
+      value = properties[name];
+
+      if (!value) {
+        $input.removeAttr(name);
+      }
+      
+      else {
+        if (typeof value === 'boolean') {
+          $input.attr(name, true);
+        }
+
+        else {
+          $input.attr(name, value);
+        }
+      }
+    }
+  },
+
+  getPropertiesForm: function() { return ''; },
 
   _isMoving: false,
   _isResizing: false,
@@ -363,8 +531,14 @@ PDFFormField.prototype = {
     if (this._focused === focused) return;
     
     var formBuilder = this._formLayer._formBuilder;
+    var properties  = this._properties;
     var isTouchSupported = !!('ontouchstart' in window);
     var $element = this.$element;
+
+    // Check if this form field is losing focus
+    if (this._focused && !focused) {
+      this.updateProperties();
+    }
 
     if ((this._focused = focused)) {
       if (formBuilder._focusedFormField && formBuilder._focusedFormField !== this) {
@@ -391,5 +565,86 @@ PDFFormField.prototype = {
         formField: this
       }));
     }
+  },
+
+  remove: function() {
+    var formFields = this._formLayer._formFields;
+
+    for (var i = 0, length = formFields.length; i < length; i++) {
+      if (formFields[i] === this) {
+        formFields.splice(i, 1);
+        break;
+      }
+    }
+
+    this.$element.remove();
+
+    this.element = this.$element = null;
   }
+};
+
+var PDFFormFieldTextBox = function PDFFormFieldTextBox(formLayer, x, y, w, h) {
+  PDFFormField.prototype.constructor.apply(this, arguments);
+
+  this.$input = $('<input type="text"/>').appendTo(this.$element);
+};
+
+PDFFormFieldTextBox.prototype = new PDFFormField();
+PDFFormFieldTextBox.prototype.constructor = PDFFormFieldTextBox;
+PDFFormFieldTextBox.prototype._type = 'Text Box';
+PDFFormFieldTextBox.prototype._defaultWidth  = 240;
+PDFFormFieldTextBox.prototype._defaultHeight = 32;
+
+
+PDFFormFieldTextBox.prototype.getPropertiesForm = function() {
+  var properties = this._properties;
+  var html = '' +
+    '<li>' +
+      '<label>Name:</label>' +
+      '<input type="text" name="name" value="' + (properties.name || '') + '"/>' +
+    '</li>' +
+    '<li>' +
+      '<label>Placeholder:</label>' +
+      '<input type="text" name="placeholder" value="' + (properties.placeholder || '') + '"/>' +
+    '</li>' +
+    '<li>' +
+      '<label>Tab Order:</label>' +
+      '<input type="number" name="tabindex" value="' + (properties.tabindex || '0') + '"/>' +
+    '</li>';
+
+  return html;
+};
+
+var PDFFormFieldCheckBox = function PDFFormFieldCheckBox(formLayer, x, y, w, h) {
+  PDFFormField.prototype.constructor.apply(this, arguments);
+
+  this.$input = $('<input type="checkbox"/>').appendTo(this.$element);
+};
+
+PDFFormFieldCheckBox.prototype = new PDFFormField();
+PDFFormFieldCheckBox.prototype.constructor = PDFFormFieldCheckBox;
+PDFFormFieldCheckBox.prototype._type = 'Check Box';
+PDFFormFieldCheckBox.prototype._defaultWidth  = 32;
+PDFFormFieldCheckBox.prototype._defaultHeight = 32;
+
+PDFFormFieldCheckBox.prototype.getPropertiesForm = function() {
+  var properties = this._properties;
+  var html = '' +
+    '<li>' +
+      '<label>Name:</label>' +
+      '<input type="text" name="name" value="' + (properties.name || '') + '"/>' +
+    '</li>' +
+    '<li>' +
+      '<label>Checked:</label>' +
+      '<select name="checked">' +
+        '<option value="false"' + (properties.checked === false ? ' selected' : '') + '>Unchecked</option>' +
+        '<option value="true" ' + (properties.checked === true  ? ' selected' : '') + '>Checked</option>' +
+      '</select>' +
+    '</li>' +
+    '<li>' +
+      '<label>Tab Order:</label>' +
+      '<input type="number" name="tabindex" value="' + (properties.tabindex || '0') + '"/>' +
+    '</li>';
+
+  return html;
 };
