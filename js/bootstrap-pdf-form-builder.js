@@ -89,6 +89,11 @@ var PDFFormBuilder = function PDFFormBuilder(pdfViewer) {
               'transform': 'scale(' + scaleX + ',' + scaleY + ')'
     });
   });
+
+  $panel.on('change', function(evt) {
+    var focusedFormField = self._focusedFormField;
+    if (focusedFormField) focusedFormField.updateProperties();
+  });
 };
 
 PDFFormBuilder.prototype = {
@@ -196,6 +201,8 @@ var PDFFormField = function PDFFormField(formLayer, x, y, w, h) {
   var $element = this.$element = $('<div class="pdf-form-field"/>').appendTo(formLayer.$element);
   var element  = this.element  = $element[0];
 
+  this.$input = $('<input type="hidden"/>');
+
   var self = element.formField = this;
 
   var properties = this._properties = {};
@@ -239,6 +246,8 @@ PDFFormField.prototype = {
   element: null,
   $element: null,
 
+  $input: null,
+
   _type: '',
 
   getType: function() { return this._type; },
@@ -246,6 +255,45 @@ PDFFormField.prototype = {
   _properties: null,
 
   getProperties: function() { return this._properties; },
+
+  updateProperties: function() {
+    var $panel = this._formLayer._formBuilder.$panel;
+    var $form  = $panel.find('form');
+    var values = $form.serializeArray();
+    var properties = this._properties;
+    var i, length, name, value;
+
+    for (i = 0, length = values.length, name, value; i < length; i++) {
+      name  = values[i].name;
+      value = values[i].value;
+
+      if (value === 'true' ) value = true;
+      if (value === 'false') value = false;
+
+      properties[name] = value;
+    }
+
+    var $input = this.$input;
+    var properties = this._properties;
+
+    for (name in properties) {
+      value = properties[name];
+
+      if (!value) {
+        $input.removeAttr(name);
+      }
+      
+      else {
+        if (typeof value === 'boolean') {
+          $input.attr(name, true);
+        }
+
+        else {
+          $input.attr(name, value);
+        }
+      }
+    }
+  },
 
   getPropertiesForm: function() { return ''; },
 
@@ -400,16 +448,9 @@ PDFFormField.prototype = {
     var $element = this.$element;
 
     // Check if this form field is losing focus
-    if (this._focused && !focused) (function() {
-      var $panel = formBuilder.$panel;
-      var $form  = $panel.find('form');
-      var values = $form.serializeArray();
-      
-      for (var i = 0, length = values.length, value; i < length; i++) {
-        value = values[i];
-        properties[value.name] = value.value;
-      }
-    })();
+    if (this._focused && !focused) {
+      this.updateProperties();
+    }
 
     if ((this._focused = focused)) {
       if (formBuilder._focusedFormField && formBuilder._focusedFormField !== this) {
@@ -441,6 +482,8 @@ PDFFormField.prototype = {
 
 var PDFFormFieldTextBox = function PDFFormFieldTextBox(formLayer, x, y, w, h) {
   PDFFormField.prototype.constructor.apply(this, arguments);
+
+  this.$input = $('<input type="text"/>').appendTo(this.$element);
 };
 
 PDFFormFieldTextBox.prototype = new PDFFormField();
@@ -464,6 +507,8 @@ PDFFormFieldTextBox.prototype.getPropertiesForm = function() {
 
 var PDFFormFieldCheckBox = function PDFFormFieldCheckBox(formLayer, x, y, w, h) {
   PDFFormField.prototype.constructor.apply(this, arguments);
+
+  this.$input = $('<input type="checkbox"/>').appendTo(this.$element);
 };
 
 PDFFormFieldCheckBox.prototype = new PDFFormField();
@@ -478,10 +523,10 @@ PDFFormFieldCheckBox.prototype.getPropertiesForm = function() {
       '<input type="text" name="name" value="' + (properties.name || '') + '"/>' +
     '</li>' +
     '<li>' +
-      '<label>Default:</label>' +
-      '<select name="default">' +
-        '<option value="0">Unchecked</option>' +
-        '<option value="1">Checked</option>' +
+      '<label>Checked:</label>' +
+      '<select name="checked">' +
+        '<option value="false"' + (properties.checked === false ? ' selected' : '') + '>Unchecked</option>' +
+        '<option value="true" ' + (properties.checked === true  ? ' selected' : '') + '>Checked</option>' +
       '</select>' +
     '</li>';
 
