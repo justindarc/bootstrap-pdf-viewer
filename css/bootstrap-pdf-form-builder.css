@@ -82,6 +82,10 @@
   margin: 0;
 }
 
+.pdf-form-builder-panel ul > li > .btn {
+  width: 146px;
+}
+
 .pdf-form-layer {
   position: absolute;
   top: 10px;
@@ -152,6 +156,7 @@
 }
 
 .pdf-form-field > input {
+  pointer-events: none;
   position: absolute;
   margin: 0;
   top: 2px;

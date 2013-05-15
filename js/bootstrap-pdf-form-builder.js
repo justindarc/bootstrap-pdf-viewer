@@ -38,12 +38,12 @@ var PDFFormBuilder = function PDFFormBuilder(pdfViewer) {
         break;
       case '#textbox':
         (function() {
-          var field = new PDFFormFieldTextBox(formLayer, position.x + 50, position.y + 50, 100, 40);
+          var field = new PDFFormFieldTextBox(formLayer, position.x + 50, position.y + 50);
         })();
         break;
       case '#checkbox':
         (function() {
-          var field = new PDFFormFieldCheckBox(formLayer, position.x + 50, position.y + 50, 40, 40);
+          var field = new PDFFormFieldCheckBox(formLayer, position.x + 50, position.y + 50);
         })();
         break;
       default:
@@ -94,6 +94,27 @@ var PDFFormBuilder = function PDFFormBuilder(pdfViewer) {
     var focusedFormField = self._focusedFormField;
     if (focusedFormField) focusedFormField.updateProperties();
   });
+
+  $panel.delegate('a', 'click', function(evt) {
+    evt.preventDefault();
+
+    var $button = $(this);
+    var href = $button.attr('href');
+
+    switch (href) {
+      case '#remove':
+        (function() {
+          var focusedFormField = self._focusedFormField;
+          if (!focusedFormField) return;
+          
+          focusedFormField.remove();
+          self.setFocusedFormField(null);
+        })();
+        break;
+      default:
+        break;
+    }
+  });
 };
 
 PDFFormBuilder.prototype = {
@@ -120,6 +141,9 @@ PDFFormBuilder.prototype = {
               '<h5>' + formField.getType() + '</h5>' +
             '</li>' +
             formField.getPropertiesForm() +
+            '<li>' +
+              '<a class="btn btn-danger" href="#remove"><i class="icon-trash"/> Remove Field</a>' +
+            '</li>' +
           '</ul>' +
         '</form>'
       );
@@ -205,6 +229,8 @@ var PDFFormField = function PDFFormField(formLayer, x, y, w, h) {
 
   var self = element.formField = this;
 
+  formLayer._formFields.push(this);
+
   var properties = this._properties = {};
 
   var $handles = this.$handles = {
@@ -224,8 +250,8 @@ var PDFFormField = function PDFFormField(formLayer, x, y, w, h) {
     handle.handleType = PDFFormField.HandleType[handleType];
   }
 
-  var position = this._position = { x: x || 100, y: y || 100 };
-  var size     = this._size     = { w: w || 100, h: h || 100 };
+  var position = this._position = { x: x || 100,                y: y || 100 };
+  var size     = this._size     = { w: w || this._defaultWidth, h: h || this._defaultHeight };
 
   this.setPosition(position.x, position.y);
   this.setSize(size.w, size.h);
@@ -247,6 +273,9 @@ PDFFormField.prototype = {
   $element: null,
 
   $input: null,
+
+  _defaultWidth:  100,
+  _defaultHeight: 100,
 
   _type: '',
 
@@ -477,6 +506,21 @@ PDFFormField.prototype = {
         formField: this
       }));
     }
+  },
+
+  remove: function() {
+    var formFields = this._formLayer._formFields;
+
+    for (var i = 0, length = formFields.length; i < length; i++) {
+      if (formFields[i] === this) {
+        formFields.splice(i, 1);
+        break;
+      }
+    }
+
+    this.$element.remove();
+
+    this.element = this.$element = null;
   }
 };
 
@@ -489,6 +533,9 @@ var PDFFormFieldTextBox = function PDFFormFieldTextBox(formLayer, x, y, w, h) {
 PDFFormFieldTextBox.prototype = new PDFFormField();
 PDFFormFieldTextBox.prototype.constructor = PDFFormFieldTextBox;
 PDFFormFieldTextBox.prototype._type = 'Text Box';
+PDFFormFieldTextBox.prototype._defaultWidth  = 240;
+PDFFormFieldTextBox.prototype._defaultHeight = 32;
+
 
 PDFFormFieldTextBox.prototype.getPropertiesForm = function() {
   var properties = this._properties;
@@ -500,6 +547,10 @@ PDFFormFieldTextBox.prototype.getPropertiesForm = function() {
     '<li>' +
       '<label>Placeholder:</label>' +
       '<input type="text" name="placeholder" value="' + (properties.placeholder || '') + '"/>' +
+    '</li>' +
+    '<li>' +
+      '<label>Tab Order:</label>' +
+      '<input type="number" name="tabindex" value="' + (properties.tabindex || '0') + '"/>' +
     '</li>';
 
   return html;
@@ -514,6 +565,8 @@ var PDFFormFieldCheckBox = function PDFFormFieldCheckBox(formLayer, x, y, w, h) 
 PDFFormFieldCheckBox.prototype = new PDFFormField();
 PDFFormFieldCheckBox.prototype.constructor = PDFFormFieldCheckBox;
 PDFFormFieldCheckBox.prototype._type = 'Check Box';
+PDFFormFieldCheckBox.prototype._defaultWidth  = 32;
+PDFFormFieldCheckBox.prototype._defaultHeight = 32;
 
 PDFFormFieldCheckBox.prototype.getPropertiesForm = function() {
   var properties = this._properties;
@@ -528,6 +581,10 @@ PDFFormFieldCheckBox.prototype.getPropertiesForm = function() {
         '<option value="false"' + (properties.checked === false ? ' selected' : '') + '>Unchecked</option>' +
         '<option value="true" ' + (properties.checked === true  ? ' selected' : '') + '>Checked</option>' +
       '</select>' +
+    '</li>' +
+    '<li>' +
+      '<label>Tab Order:</label>' +
+      '<input type="number" name="tabindex" value="' + (properties.tabindex || '0') + '"/>' +
     '</li>';
 
   return html;
