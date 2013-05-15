@@ -20,6 +20,8 @@ var PDFFormBuilder = function PDFFormBuilder(pdfViewer) {
   var $navbarLeft = pdfViewer.$navbarLeft;
 
   $('<li><a href="#properties" rel="tooltip" title="Toggle Properties"><i class="icon-list-alt"/></a></li>').appendTo($navbarLeft);
+  $('<li><a href="#save" rel="tooltip" title="Save"><i class="icon-save"/></a></li>').appendTo($navbarLeft);
+  $('<li><a href="#open" rel="tooltip" title="Open"><i class="icon-magic"/></a></li>').appendTo($navbarLeft);
   $('<li><a href="#textbox" rel="tooltip" title="Text Field"><i class="icon-edit"/></a></li>').appendTo($navbarLeft);
   $('<li><a href="#checkbox" rel="tooltip" title="Checkbox"><i class="icon-check"/></a></li>').appendTo($navbarLeft);
   
@@ -34,6 +36,18 @@ var PDFFormBuilder = function PDFFormBuilder(pdfViewer) {
       case '#properties':
         (function() {
           return (self._panelOpen) ? self.closePanel() : self.openPanel();
+        })();
+        break;
+      case '#save':
+        (function() {
+          var serializedFields = JSON.stringify(self.serialize());
+          window.alert(serializedFields);
+        })();
+        break;
+      case '#open':
+        (function() {
+          var serializedFields = JSON.parse(window.prompt("Enter Form Field data in JSON format:"));
+          self.deserialize(serializedFields);
         })();
         break;
       case '#textbox':
@@ -106,7 +120,7 @@ var PDFFormBuilder = function PDFFormBuilder(pdfViewer) {
         (function() {
           var focusedFormField = self._focusedFormField;
           if (!focusedFormField) return;
-          
+
           focusedFormField.remove();
           self.setFocusedFormField(null);
         })();
@@ -187,6 +201,42 @@ PDFFormBuilder.prototype = {
     this.$panel.removeClass('pdf-form-builder-panel-open');
 
     $(window).trigger('resize');
+  },
+
+  serialize: function() {
+    var serializedFields = [];
+    var formFields = this._formLayer._formFields;
+    var formField, matches, className;
+
+    for (var i = 0, length = formFields.length; i < length; i++) {
+      formField = formFields[i];
+      matches   = formField.constructor.toString().match(/function\s*(\w+)/);
+      className = matches.length === 2 ? matches[1] : 'PDFFormField';
+      
+      serializedFields.push({
+        type:       className,
+        position:   formField._position,
+        size:       formField._size,
+        properties: formField._properties
+      });
+    }
+
+    return serializedFields;
+  },
+
+  deserialize: function(serializedFields) {
+    var self = this;
+    for (var i = 0, length = serializedFields.length; i < length; i++) {
+      (function(serializedField) {
+        var formFieldClass = window[serializedField.type] || PDFFormField;
+        
+        var position  = serializedField.position;
+        var size      = serializedField.size;
+        var formField = new formFieldClass(self._formLayer, position.x, position.y, size.w, size.h);
+
+        formField.setProperties(serializedField.properties);
+      })(serializedFields[i]);
+    }
   }
 };
 
@@ -285,6 +335,11 @@ PDFFormField.prototype = {
 
   getProperties: function() { return this._properties; },
 
+  setProperties: function(properties) {
+    this._properties = properties || {};
+    this.updateInput();
+  },
+
   updateProperties: function() {
     var $panel = this._formLayer._formBuilder.$panel;
     var $form  = $panel.find('form');
@@ -302,6 +357,10 @@ PDFFormField.prototype = {
       properties[name] = value;
     }
 
+    this.updateInput();
+  },
+
+  updateInput: function() {
     var $input = this.$input;
     var properties = this._properties;
 
