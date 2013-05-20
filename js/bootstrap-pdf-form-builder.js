@@ -47,8 +47,19 @@ var PDFFormBuilder = function PDFFormBuilder(pdfViewer) {
         break;
       case '#open':
         (function() {
-          var serializedFields = JSON.parse(window.prompt("Enter Form Field data in JSON format:"));
-          self.deserialize(serializedFields, true);
+          var serializedFields = window.prompt('Enter Form Field data in JSON format:\n\n(or press "OK" to load sample form)');
+          if (serializedFields === null) return;
+
+          serializedFields = $.trim(serializedFields);
+          if (serializedFields) {
+            self.deserialize(JSON.parse(serializedFields), true);
+          }
+
+          else {
+            $.getJSON('data/form.json', function(data) {
+              self.deserialize(data, true);
+            });
+          }
         })();
         break;
       case '#label':
@@ -73,6 +84,8 @@ var PDFFormBuilder = function PDFFormBuilder(pdfViewer) {
 
   var isTouchSupported = !!('ontouchstart' in window);
   formLayer.$element.on(isTouchSupported ? 'touchstart' : 'mousedown', function(evt) {
+    if (evt.isDefaultPrevented()) return;
+
     formLayer.$element.find('.pdf-form-field-focus').each(function(index, element) {
       var formField = element.formField;
       if (!formField) return;
@@ -86,9 +99,14 @@ var PDFFormBuilder = function PDFFormBuilder(pdfViewer) {
     if (!formField) return;
 
     formField.setFocused(true);
-    formField._mouseDownHandler.call(formField.element, evt);
 
-    evt.stopImmediatePropagation();
+    // Only forward the 'mousedown' event to prevent accidental drags when
+    // scrolling on touchscreen devices.
+    if (evt.type === 'mousedown') {
+      formField._mouseDownHandler.call(formField.element, evt);
+    }
+
+    evt.preventDefault();
   });
 
   pdfViewer.$element.on(PDFViewer.EventType.ScaleChange, function(evt) {
