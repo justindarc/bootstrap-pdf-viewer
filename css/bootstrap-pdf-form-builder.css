@@ -155,9 +155,11 @@
   z-index: -1;
 }
 
-.pdf-form-field > input {
+.pdf-form-field > input,
+.pdf-form-field > label {
   pointer-events: none;
   position: absolute;
+  line-height: 1em;
   margin: 0;
   top: 2px;
   right: 2px;
@@ -166,18 +168,21 @@
   width: auto;
   height: auto;
   z-index: 1;
+  overflow: hidden;
   opacity: 0.9;
 }
 
 .pdf-form-field-handle {
   background: #eef9fe;
   border: 1px solid #a8c8df;
-  opacity: 0;
-  visibility: hidden;
+  pointer-events: auto;
   position: absolute;
   width: 10px;
   height: 10px;
   z-index: 2;
+  overflow: visible;
+  opacity: 0;
+  visibility: hidden;
   -webkit-box-shadow: 0 0 3px 1px rgba(0, 128, 224, 0.3);
      -moz-box-shadow: 0 0 3px 1px rgba(0, 128, 224, 0.3);
           box-shadow: 0 0 3px 1px rgba(0, 128, 224, 0.3);
