@@ -22,6 +22,7 @@ var PDFFormBuilder = function PDFFormBuilder(pdfViewer) {
   $('<li><a href="#properties" rel="tooltip" title="Toggle Properties"><i class="icon-list-alt"/></a></li>').appendTo($navbarLeft);
   $('<li><a href="#save" rel="tooltip" title="Save"><i class="icon-save"/></a></li>').appendTo($navbarLeft);
   $('<li><a href="#open" rel="tooltip" title="Open"><i class="icon-magic"/></a></li>').appendTo($navbarLeft);
+  $('<li><a href="#label" rel="tooltip" title="Label"><i class="icon-font"/></a></li>').appendTo($navbarLeft);
   $('<li><a href="#textbox" rel="tooltip" title="Text Field"><i class="icon-edit"/></a></li>').appendTo($navbarLeft);
   $('<li><a href="#checkbox" rel="tooltip" title="Checkbox"><i class="icon-check"/></a></li>').appendTo($navbarLeft);
   
@@ -47,7 +48,12 @@ var PDFFormBuilder = function PDFFormBuilder(pdfViewer) {
       case '#open':
         (function() {
           var serializedFields = JSON.parse(window.prompt("Enter Form Field data in JSON format:"));
-          self.deserialize(serializedFields);
+          self.deserialize(serializedFields, true);
+        })();
+        break;
+      case '#label':
+        (function() {
+          var field = new PDFFormFieldLabel(formLayer, position.x + 50, position.y + 50);
         })();
         break;
       case '#textbox':
@@ -116,6 +122,15 @@ var PDFFormBuilder = function PDFFormBuilder(pdfViewer) {
     var href = $button.attr('href');
 
     switch (href) {
+      case '#duplicate':
+        (function() {
+          var focusedFormField = self._focusedFormField;
+          if (!focusedFormField) return;
+
+          self.deserialize([focusedFormField.serialize()]);
+          focusedFormField.setFocused(true);
+        })();
+        break;
       case '#remove':
         (function() {
           var focusedFormField = self._focusedFormField;
@@ -155,6 +170,9 @@ PDFFormBuilder.prototype = {
               '<h5>' + formField.getType() + '</h5>' +
             '</li>' +
             formField.getPropertiesForm() +
+            '<li>' +
+              '<a class="btn btn-primary" href="#duplicate"><i class="icon-copy"/> Duplicate Field</a>' +
+            '</li>' +
             '<li>' +
               '<a class="btn btn-danger" href="#remove"><i class="icon-trash"/> Remove Field</a>' +
             '</li>' +
@@ -206,36 +224,27 @@ PDFFormBuilder.prototype = {
   serialize: function() {
     var serializedFields = [];
     var formFields = this._formLayer._formFields;
-    var formField, matches, className;
 
     for (var i = 0, length = formFields.length; i < length; i++) {
-      formField = formFields[i];
-      matches   = formField.constructor.toString().match(/function\s*(\w+)/);
-      className = matches.length === 2 ? matches[1] : 'PDFFormField';
-      
-      serializedFields.push({
-        type:       className,
-        position:   formField._position,
-        size:       formField._size,
-        properties: formField._properties
-      });
+      serializedFields.push(formFields[i].serialize());
     }
 
     return serializedFields;
   },
 
-  deserialize: function(serializedFields) {
-    var self = this;
-    for (var i = 0, length = serializedFields.length; i < length; i++) {
-      (function(serializedField) {
-        var formFieldClass = window[serializedField.type] || PDFFormField;
-        
-        var position  = serializedField.position;
-        var size      = serializedField.size;
-        var formField = new formFieldClass(self._formLayer, position.x, position.y, size.w, size.h);
+  deserialize: function(serializedFields, replaceExistingFields) {
+    var formLayer = this._formLayer;
 
-        formField.setProperties(serializedField.properties);
-      })(serializedFields[i]);
+    var focusedFormField = this._focusedFormField;
+    if (focusedFormField) focusedFormField.setFocused(false);
+
+    if (replaceExistingFields) (function() {
+      var formFields = formLayer._formFields;
+      while (formFields.length > 0) formFields[0].remove();
+    })();
+
+    for (var i = 0, length = serializedFields.length; i < length; i++) {
+      PDFFormField.deserialize(formLayer, serializedFields[i]);
     }
   }
 };
@@ -281,7 +290,10 @@ var PDFFormField = function PDFFormField(formLayer, x, y, w, h) {
 
   formLayer._formFields.push(this);
 
-  var properties = this._properties = {};
+  var properties = this._properties = {
+    attributes: {},
+    styles: {}
+  };
 
   var $handles = this.$handles = {
     N : $('<div class="pdf-form-field-handle pdf-form-field-handle-n"/>' ).appendTo($element),
@@ -314,6 +326,18 @@ PDFFormField.EventType = {
 
 PDFFormField.HandleType = { N: 'n', NE: 'ne', E: 'e', SE: 'se', S: 's', SW: 'sw', W: 'w', NW: 'nw' };
 
+PDFFormField.deserialize = function(formLayer, serializedField) {
+  var formFieldClass = window[serializedField.type] || PDFFormField;
+  
+  var position = serializedField.position;
+  var size     = serializedField.size;
+
+  var formField = new formFieldClass(formLayer, position.x, position.y, size.w, size.h);
+  formField.setProperties(serializedField.properties);
+
+  return formField;
+};
+
 PDFFormField.prototype = {
   constructor: PDFFormField,
 
@@ -326,6 +350,20 @@ PDFFormField.prototype = {
 
   _defaultWidth:  100,
   _defaultHeight: 100,
+
+  getClassName: function() {
+    var matches = this.constructor.toString().match(/function\s*(\w+)/);
+    return matches.length === 2 ? matches[1] : 'PDFFormField';
+  },
+
+  serialize: function() {
+    return {
+      type:       this.getClassName(),
+      position:   this._position,
+      size:       this._size,
+      properties: this._properties
+    };
+  },
 
   _type: '',
 
@@ -351,10 +389,23 @@ PDFFormField.prototype = {
       name  = values[i].name;
       value = values[i].value;
 
-      if (value === 'true' ) value = true;
-      if (value === 'false') value = false;
+      if (name.indexOf('styles.') === 0) {
+        value += $form.find('[name="' + name + '"]').attr('data-value-suffix') || '';
+        name = name.substr(7);
+        properties.styles[name] = value;
+      }
 
-      properties[name] = value;
+      else if (name.indexOf('attributes.') === 0) {
+        if (value === 'true' ) value = true;
+        if (value === 'false') value = false;
+
+        name = name.substr(11);
+        properties.attributes[name] = value;
+      }
+
+      else {
+        properties[name] = value;
+      }
     }
 
     this.updateInput();
@@ -363,9 +414,27 @@ PDFFormField.prototype = {
   updateInput: function() {
     var $input = this.$input;
     var properties = this._properties;
+    var styles     = properties.styles;
+    var attributes = properties.attributes;
+
+    var name, value;
 
     for (name in properties) {
       value = properties[name];
+
+      if (name === 'html') {
+        $input.html(value);
+      }
+    }
+
+    for (name in styles) {
+      value = styles[name];
+
+      $input.css(name, value);
+    }
+
+    for (name in attributes) {
+      value = attributes[name];
 
       if (!value) {
         $input.removeAttr(name);
@@ -534,6 +603,7 @@ PDFFormField.prototype = {
     var properties  = this._properties;
     var isTouchSupported = !!('ontouchstart' in window);
     var $element = this.$element;
+    if (!$element) return;
 
     // Check if this form field is losing focus
     if (this._focused && !focused) {
@@ -583,6 +653,33 @@ PDFFormField.prototype = {
   }
 };
 
+var PDFFormFieldLabel = function PDFFormFieldLabel(formLayer, x, y, w, h) {
+  PDFFormField.prototype.constructor.apply(this, arguments);
+
+  this.$input = $('<label/>').appendTo(this.$element);
+};
+
+PDFFormFieldLabel.prototype = new PDFFormField();
+PDFFormFieldLabel.prototype.constructor = PDFFormFieldLabel;
+PDFFormFieldLabel.prototype._type = 'Label';
+PDFFormFieldLabel.prototype._defaultWidth  = 240;
+PDFFormFieldLabel.prototype._defaultHeight = 32;
+
+PDFFormFieldLabel.prototype.getPropertiesForm = function() {
+  var properties = this._properties;
+  var html = '' +
+    '<li>' +
+      '<label>Text:</label>' +
+      '<input type="text" name="html" value="' + (properties.html || '') + '"/>' +
+    '</li>' +
+    '<li>' +
+      '<label>Font Size:</label>' +
+      '<input type="number" name="styles.font-size" data-value-suffix="px" value="' + window.parseInt(properties.styles['font-size'] || '16', 10) + '"/>' +
+    '</li>';
+
+  return html;
+};
+
 var PDFFormFieldTextBox = function PDFFormFieldTextBox(formLayer, x, y, w, h) {
   PDFFormField.prototype.constructor.apply(this, arguments);
 
@@ -595,21 +692,24 @@ PDFFormFieldTextBox.prototype._type = 'Text Box';
 PDFFormFieldTextBox.prototype._defaultWidth  = 240;
 PDFFormFieldTextBox.prototype._defaultHeight = 32;
 
-
 PDFFormFieldTextBox.prototype.getPropertiesForm = function() {
   var properties = this._properties;
   var html = '' +
     '<li>' +
       '<label>Name:</label>' +
-      '<input type="text" name="name" value="' + (properties.name || '') + '"/>' +
+      '<input type="text" name="attributes.name" value="' + (properties.attributes.name || '') + '"/>' +
     '</li>' +
     '<li>' +
       '<label>Placeholder:</label>' +
-      '<input type="text" name="placeholder" value="' + (properties.placeholder || '') + '"/>' +
+      '<input type="text" name="attributes.placeholder" value="' + (properties.attributes.placeholder || '') + '"/>' +
+    '</li>' +
+    '<li>' +
+      '<label>Font Size:</label>' +
+      '<input type="number" name="styles.font-size" data-value-suffix="px" value="' + window.parseInt(properties.styles['font-size'] || '16', 10) + '"/>' +
     '</li>' +
     '<li>' +
       '<label>Tab Order:</label>' +
-      '<input type="number" name="tabindex" value="' + (properties.tabindex || '0') + '"/>' +
+      '<input type="number" name="attributes.tabindex" value="' + (properties.attributes.tabindex || '0') + '"/>' +
     '</li>';
 
   return html;
@@ -632,18 +732,18 @@ PDFFormFieldCheckBox.prototype.getPropertiesForm = function() {
   var html = '' +
     '<li>' +
       '<label>Name:</label>' +
-      '<input type="text" name="name" value="' + (properties.name || '') + '"/>' +
+      '<input type="text" name="attributes.name" value="' + (properties.attributes.name || '') + '"/>' +
     '</li>' +
     '<li>' +
       '<label>Checked:</label>' +
-      '<select name="checked">' +
-        '<option value="false"' + (properties.checked === false ? ' selected' : '') + '>Unchecked</option>' +
-        '<option value="true" ' + (properties.checked === true  ? ' selected' : '') + '>Checked</option>' +
+      '<select name="attributes.checked">' +
+        '<option value="false"' + (properties.attributes.checked === false ? ' selected' : '') + '>Unchecked</option>' +
+        '<option value="true" ' + (properties.attributes.checked === true  ? ' selected' : '') + '>Checked</option>' +
       '</select>' +
     '</li>' +
     '<li>' +
       '<label>Tab Order:</label>' +
-      '<input type="number" name="tabindex" value="' + (properties.tabindex || '0') + '"/>' +
+      '<input type="number" name="attributes.tabindex" value="' + (properties.attributes.tabindex || '0') + '"/>' +
     '</li>';
 
   return html;

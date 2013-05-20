@@ -1,0 +1,124 @@
+[
+  {
+    "type": "PDFFormFieldTextBox",
+    "position": {
+      "x": 72,
+      "y": 314
+    },
+    "size": {
+      "w": 425,
+      "h": 25
+    },
+    "properties": {
+      "attributes": {
+        "name": "email_address",
+        "placeholder": "e.g.: johnny@example.com",
+        "tabindex": "4"
+      },
+      "styles": {
+        "font-size": "16px"
+      }
+    }
+  },
+  {
+    "type": "PDFFormFieldTextBox",
+    "position": {
+      "x": 72,
+      "y": 148
+    },
+    "size": {
+      "w": 425,
+      "h": 25
+    },
+    "properties": {
+      "attributes": {
+        "name": "first_name",
+        "placeholder": "e.g.: Johnny",
+        "tabindex": "1"
+      },
+      "styles": {
+        "font-size": "16px"
+      }
+    }
+  },
+  {
+    "type": "PDFFormFieldTextBox",
+    "position": {
+      "x": 72,
+      "y": 202
+    },
+    "size": {
+      "w": 425,
+      "h": 25
+    },
+    "properties": {
+      "attributes": {
+        "name": "last_name",
+        "placeholder": "e.g.: Appleseed",
+        "tabindex": "2"
+      },
+      "styles": {
+        "font-size": "16px"
+      }
+    }
+  },
+  {
+    "type": "PDFFormFieldTextBox",
+    "position": {
+      "x": 72,
+      "y": 258
+    },
+    "size": {
+      "w": 425,
+      "h": 25
+    },
+    "properties": {
+      "attributes": {
+        "name": "phone_number",
+        "placeholder": "e.g.: 123-456-7890",
+        "tabindex": "3"
+      },
+      "styles": {
+        "font-size": "16px"
+      }
+    }
+  },
+  {
+    "type": "PDFFormFieldCheckBox",
+    "position": {
+      "x": 144,
+      "y": 378
+    },
+    "size": {
+      "w": 24.5,
+      "h": 15
+    },
+    "properties": {
+      "attributes": {
+        "name": "contact_phone",
+        "checked": false,
+        "tabindex": "5"
+      },
+      "styles": {}
+    }
+  },
+  {
+    "type": "PDFFormFieldCheckBox",
+    "position": {
+      "x": 144,
+      "y": 408
+    },
+    "size": {
+      "w": 24.5,
+      "h": 15
+    },
+    "properties": {
+      "attributes": {
+        "name": "contact_email",
+        "checked": false,
+        "tabindex": "6"
+      },
+      "styles": {}
+    }
+  }
+]
