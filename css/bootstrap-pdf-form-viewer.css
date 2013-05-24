@@ -52,7 +52,10 @@
 }
 
 .pdf-form-viewer-layer .pdf-form-field-check-box > input {
-  visibility: hidden;
+  position: absolute;
+  top: -100%;
+  left: -100%;
+  opacity: 0;
 }
 
 .pdf-form-viewer-layer .pdf-form-field-check-box > i {
@@ -67,6 +70,11 @@
 
 .pdf-form-viewer-layer .pdf-form-field-check-box > i:before {
   content: '\f096';
+}
+
+.pdf-form-viewer-layer .pdf-form-field-check-box > input:focus + i {
+  color: #52a8ec;
+  text-shadow: 0 0 4px rgba(82, 168, 236, 0.8);
 }
 
 .pdf-form-viewer-layer .pdf-form-field-check-box > input:checked + i:before,
