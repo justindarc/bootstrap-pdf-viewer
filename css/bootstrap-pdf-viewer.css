@@ -63,7 +63,7 @@ html.pdf-viewer-full-screen > body {
 .pdf-viewer .nav > .divider {
   border-right: 1px solid #fff;
   border-left: 1px solid #ccc;
-  margin: 0.7em 0.5em 0 !important;
+  margin: 0.7em 0.2em 0 !important;
   width: 0;
   height: 1.6em;
 }
