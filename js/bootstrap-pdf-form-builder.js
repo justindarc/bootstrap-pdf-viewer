@@ -20,8 +20,10 @@ var PDFFormBuilder = function PDFFormBuilder(pdfViewer) {
   var $navbarLeft = pdfViewer.$navbarLeft;
 
   $('<li><a href="#properties" rel="tooltip" title="Toggle Properties"><i class="icon-list-alt"/></a></li>').appendTo($navbarLeft);
-  $('<li><a href="#save" rel="tooltip" title="Save"><i class="icon-download-alt"/></a></li>').appendTo($navbarLeft);
-  $('<li><a href="#open" rel="tooltip" title="Open"><i class="icon-upload-alt"/></a></li>').appendTo($navbarLeft);
+  $('<li class="divider"/>').appendTo($navbarLeft);
+  $('<li><a href="#open-form" rel="tooltip" title="Open Form"><i class="icon-upload-alt"/></a></li>').appendTo($navbarLeft);
+  $('<li><a href="#save-form" rel="tooltip" title="Save Form"><i class="icon-save"/></a></li>').appendTo($navbarLeft);
+  $('<li class="divider"/>').appendTo($navbarLeft);
   $('<li><a href="#label" rel="tooltip" title="Label"><i class="icon-font"/></a></li>').appendTo($navbarLeft);
   $('<li><a href="#textbox" rel="tooltip" title="Text Field"><i class="icon-edit"/></a></li>').appendTo($navbarLeft);
   $('<li><a href="#checkbox" rel="tooltip" title="Checkbox"><i class="icon-check"/></a></li>').appendTo($navbarLeft);
@@ -39,13 +41,7 @@ var PDFFormBuilder = function PDFFormBuilder(pdfViewer) {
           return (self._panelOpen) ? self.closePanel() : self.openPanel();
         })();
         break;
-      case '#save':
-        (function() {
-          var serializedFields = JSON.stringify(self.serializeFields());
-          window.alert(serializedFields);
-        })();
-        break;
-      case '#open':
+      case '#open-form':
         (function() {
           var serializedFields = window.prompt('Enter Form Field data in JSON format:\n\n(or press "OK" to load sample form)');
           if (serializedFields === null) return;
@@ -60,6 +56,12 @@ var PDFFormBuilder = function PDFFormBuilder(pdfViewer) {
               self.deserializeFields(data, true);
             });
           }
+        })();
+        break;
+      case '#save-form':
+        (function() {
+          var serializedFields = JSON.stringify(self.serializeFields());
+          window.alert(serializedFields);
         })();
         break;
       case '#label':
@@ -185,7 +187,7 @@ PDFFormBuilder.prototype = {
         '<form>' +
           '<ul>' +
             '<li>' +
-              '<h5>' + formField.getType() + '</h5>' +
+              '<h5>' + formField.getDescriptiveType() + '</h5>' +
             '</li>' +
             formField.getPropertiesForm() +
             '<li>' +
@@ -291,5 +293,15 @@ PDFFormBuilderLayer.prototype = {
 
   _formFields: null,
 
-  getFormFields: function() { return this._formFields; }
+  getFormFields: function() { return this._formFields; },
+
+  getFormFieldById: function(id) {
+    var formFields = this._formFields;
+    for (var i = 0, length = formFields.length, formField; i < length; i++) {
+      formField = formFields[i];
+      if (formField && formField.getId() == id) return formField;
+    }
+
+    return null;
+  }
 };

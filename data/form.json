@@ -1,26 +1,6 @@
 [
   {
-    "type": "PDFFormFieldTextBox",
-    "position": {
-      "x": 72,
-      "y": 314
-    },
-    "size": {
-      "w": 425,
-      "h": 25
-    },
-    "properties": {
-      "attributes": {
-        "name": "email_address",
-        "placeholder": "e.g.: johnny@example.com",
-        "tabindex": "4"
-      },
-      "styles": {
-        "font-size": "16px"
-      }
-    }
-  },
-  {
+    "id": 123456789001,
     "type": "PDFFormFieldTextBox",
     "position": {
       "x": 72,
@@ -42,6 +22,7 @@
     }
   },
   {
+    "id": 123456789002,
     "type": "PDFFormFieldTextBox",
     "position": {
       "x": 72,
@@ -63,6 +44,7 @@
     }
   },
   {
+    "id": 123456789003,
     "type": "PDFFormFieldTextBox",
     "position": {
       "x": 72,
@@ -84,6 +66,29 @@
     }
   },
   {
+    "id": 123456789004,
+    "type": "PDFFormFieldTextBox",
+    "position": {
+      "x": 72,
+      "y": 314
+    },
+    "size": {
+      "w": 425,
+      "h": 25
+    },
+    "properties": {
+      "attributes": {
+        "name": "email_address",
+        "placeholder": "e.g.: johnny@example.com",
+        "tabindex": "4"
+      },
+      "styles": {
+        "font-size": "16px"
+      }
+    }
+  },
+  {
+    "id": 123456789005,
     "type": "PDFFormFieldCheckBox",
     "position": {
       "x": 144,
@@ -103,6 +108,7 @@
     }
   },
   {
+    "id": 123456789006,
     "type": "PDFFormFieldCheckBox",
     "position": {
       "x": 144,

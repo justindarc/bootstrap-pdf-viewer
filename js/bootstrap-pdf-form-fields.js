@@ -10,6 +10,19 @@ var PDFFormField = function PDFFormField(formLayer, x, y, w, h) {
 
   var self = element.formField = this;
 
+  var generateUniqueId = function() {
+    var lastTimestamp = new Date().getTime();
+    var newTimestamp = new Date().getTime();
+
+    while (newTimestamp === lastTimestamp) {
+      newTimestamp = new Date().getTime();
+    }
+
+    return newTimestamp;
+  };
+
+  this._id = generateUniqueId();
+
   formLayer._formFields.push(this);
 
   var properties = this._properties = {
@@ -57,7 +70,9 @@ PDFFormField.deserializeField = function(formLayer, serializedField) {
   var size     = serializedField.size;
 
   var formField = new formFieldClass(formLayer, position.x, position.y, size.w, size.h);
+  
   formField.setProperties(serializedField.properties);
+  formField._id = serializedField.id;
 
   return formField;
 };
@@ -82,6 +97,7 @@ PDFFormField.prototype = {
 
   serializeField: function() {
     return {
+      id:         this._id,
       type:       this.getClassName(),
       position:   this._position,
       size:       this._size,
@@ -89,9 +105,28 @@ PDFFormField.prototype = {
     };
   },
 
-  _type: '',
+  serializeValue: function() {
+    return {
+      id:    this._id,
+      value: this.getValue()
+    };
+  },
 
-  getType: function() { return this._type; },
+  getValue: function() {
+    return this.$input.val();
+  },
+
+  setValue: function(value) {
+    this.$input.val(value || null);
+  },
+
+  _id: '',
+
+  getId: function() { return this._id; },
+
+  _descriptiveType: '',
+
+  getDescriptiveType: function() { return this._descriptiveType; },
 
   _properties: null,
 
@@ -160,18 +195,16 @@ PDFFormField.prototype = {
     for (name in attributes) {
       value = attributes[name];
 
-      if (!value) {
+      if (typeof value === 'boolean') {
+        $input.prop(name, value);
+      }
+
+      else if (!value) {
         $input.removeAttr(name);
       }
       
       else {
-        if (typeof value === 'boolean') {
-          $input.attr(name, true);
-        }
-
-        else {
-          $input.attr(name, value);
-        }
+        $input.attr(name, value);
       }
     }
   },
@@ -395,7 +428,7 @@ var PDFFormFieldLabel = function PDFFormFieldLabel(formLayer, x, y, w, h) {
 
 PDFFormFieldLabel.prototype = new PDFFormField();
 PDFFormFieldLabel.prototype.constructor = PDFFormFieldLabel;
-PDFFormFieldLabel.prototype._type = 'Label';
+PDFFormFieldLabel.prototype._descriptiveType = 'Label';
 PDFFormFieldLabel.prototype._defaultWidth  = 240;
 PDFFormFieldLabel.prototype._defaultHeight = 32;
 
@@ -414,6 +447,8 @@ PDFFormFieldLabel.prototype.getPropertiesForm = function() {
   return html;
 };
 
+PDFFormFieldLabel.prototype.serializeValue = function() { return null; }
+
 var PDFFormFieldTextBox = function PDFFormFieldTextBox(formLayer, x, y, w, h) {
   PDFFormField.prototype.constructor.apply(this, arguments);
 
@@ -422,7 +457,7 @@ var PDFFormFieldTextBox = function PDFFormFieldTextBox(formLayer, x, y, w, h) {
 
 PDFFormFieldTextBox.prototype = new PDFFormField();
 PDFFormFieldTextBox.prototype.constructor = PDFFormFieldTextBox;
-PDFFormFieldTextBox.prototype._type = 'Text Box';
+PDFFormFieldTextBox.prototype._descriptiveType = 'Text Box';
 PDFFormFieldTextBox.prototype._defaultWidth  = 240;
 PDFFormFieldTextBox.prototype._defaultHeight = 32;
 
@@ -457,15 +492,19 @@ var PDFFormFieldCheckBox = function PDFFormFieldCheckBox(formLayer, x, y, w, h) 
   var $icon  = $('<i class="icon-check"/>').appendTo($label);
 
   var self = this;
-  this.$element.on(PDFFormField.EventType.Resize, function(evt) {
+  var resizeHandler = function(evt) {
     var size = self._size;
     $icon.css('font-size', Math.min(size.w, size.h) + 'px');
-  });
+  };
+
+  this.$element.on(PDFFormField.EventType.Resize, resizeHandler);
+
+  resizeHandler();
 };
 
 PDFFormFieldCheckBox.prototype = new PDFFormField();
 PDFFormFieldCheckBox.prototype.constructor = PDFFormFieldCheckBox;
-PDFFormFieldCheckBox.prototype._type = 'Check Box';
+PDFFormFieldCheckBox.prototype._descriptiveType = 'Check Box';
 PDFFormFieldCheckBox.prototype._defaultWidth  = 32;
 PDFFormFieldCheckBox.prototype._defaultHeight = 32;
 
@@ -489,4 +528,12 @@ PDFFormFieldCheckBox.prototype.getPropertiesForm = function() {
     '</li>';
 
   return html;
+};
+
+PDFFormFieldCheckBox.prototype.getValue = function() {
+  return this.$input.is(':checked');
+};
+
+PDFFormFieldCheckBox.prototype.setValue = function(value) {
+  this.$input.prop('checked', !!value);
 };

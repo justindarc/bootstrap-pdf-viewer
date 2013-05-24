@@ -16,7 +16,10 @@ var PDFFormViewer = function PDFFormViewer(pdfViewer) {
   var $navbarContainer = pdfViewer.$navbarContainer;
   var $navbarLeft = pdfViewer.$navbarLeft;
 
-  $('<li><a href="#open" rel="tooltip" title="Open"><i class="icon-upload-alt"/></a></li>').appendTo($navbarLeft);
+  $('<li><a href="#open-form" rel="tooltip" title="Open Form"><i class="icon-upload-alt"/></a></li>').appendTo($navbarLeft);
+  $('<li class="divider"/>').appendTo($navbarLeft);
+  $('<li><a href="#open-data" rel="tooltip" title="Open Data"><i class="icon-upload-alt"/></a></li>').appendTo($navbarLeft);
+  $('<li><a href="#save-data" rel="tooltip" title="Save Data"><i class="icon-save"/></a></li>').appendTo($navbarLeft);
 
   $navbarContainer.delegate('a', 'click', function(evt) {
     evt.preventDefault();
@@ -25,7 +28,7 @@ var PDFFormViewer = function PDFFormViewer(pdfViewer) {
     var href = $button.attr('href');
 
     switch (href) {
-      case '#open':
+      case '#open-form':
         (function() {
           var serializedFields = window.prompt('Enter Form Field data in JSON format:\n\n(or press "OK" to load sample form)');
           if (serializedFields === null) return;
@@ -40,6 +43,29 @@ var PDFFormViewer = function PDFFormViewer(pdfViewer) {
               self.deserializeFields(data, true);
             });
           }
+        })();
+        break;
+      case '#open-data':
+        (function() {
+          var serializedValues = window.prompt('Enter Form Value data in JSON format:\n\n(or press "OK" to load sample submission)');
+          if (serializedValues === null) return;
+
+          serializedValues = $.trim(serializedValues);
+          if (serializedValues) {
+            self.deserializeValues(JSON.parse(serializedValues));
+          }
+
+          else {
+            $.getJSON('data/submission.json', function(data) {
+              self.deserializeValues(data);
+            });
+          }
+        })();
+        break;
+      case '#save-data':
+        (function() {
+          var serializedValues = JSON.stringify(self.serializeValues());
+          window.alert(serializedValues);
         })();
         break;
       default:
@@ -91,6 +117,29 @@ PDFFormViewer.prototype = {
     for (var i = 0, length = serializedFields.length; i < length; i++) {
       PDFFormField.deserializeField(formLayer, serializedFields[i]);
     }
+  },
+
+  serializeValues: function() {
+    var serializedValues = [];
+    var formFields = this._formLayer._formFields;
+
+    for (var i = 0, length = formFields.length, serializedValue; i < length; i++) {
+      serializedValue = formFields[i].serializeValue();
+      if (serializedValue) serializedValues.push(serializedValue);
+    }
+
+    return serializedValues;
+  },
+
+  deserializeValues: function(serializedValues) {
+    var formLayer = this._formLayer;
+
+    for (var i = 0, length = serializedValues.length, serializedValue, formField; i < length; i++) {
+      if (!(serializedValue = serializedValues[i])) continue;
+      if (!(formField = formLayer.getFormFieldById(serializedValue.id))) continue;
+
+      formField.setValue(serializedValue.value);
+    }
   }
 };
 
@@ -118,5 +167,15 @@ PDFFormViewerLayer.prototype = {
 
   _formFields: null,
 
-  getFormFields: function() { return this._formFields; }
+  getFormFields: function() { return this._formFields; },
+
+  getFormFieldById: function(id) {
+    var formFields = this._formFields;
+    for (var i = 0, length = formFields.length, formField; i < length; i++) {
+      formField = formFields[i];
+      if (formField && formField.getId() == id) return formField;
+    }
+
+    return null;
+  }
 };
