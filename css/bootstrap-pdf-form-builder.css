@@ -173,7 +173,10 @@
 }
 
 .pdf-form-builder-layer .pdf-form-field-check-box > input {
-  visibility: hidden;
+  position: absolute;
+  top: -100%;
+  left: -100%;
+  opacity: 0;
 }
 
 .pdf-form-builder-layer .pdf-form-field-check-box > i {
