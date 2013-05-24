@@ -51,6 +51,29 @@ var PDFViewer = function PDFViewer(element) {
   var isTouchSupported = !!('ontouchstart' in window);
   if (!isTouchSupported) $('<li><a href="#full-screen" rel="tooltip" title="Full Screen"><i class="icon-fullscreen"/></a></li>').appendTo($navbarRight);
   
+  if (isTouchSupported) (function() {
+    var $element = null;
+
+    $navbarInner.delegate('a', 'touchstart', function(evt) {
+      $element = $(this);
+    });
+
+    $window.on('touchmove', function(evt) {
+      if ($element) $element = null;
+    });
+
+    $window.on('touchend', function(evt) {
+      if (!$element) return;
+
+      evt.preventDefault();
+
+      var $el = $element;
+      window.setTimeout(function() { $el.trigger('click'); }, 1);
+      
+      $element = null;
+    });
+  })();
+
   $navbarInner.find('[rel="tooltip"], [data-rel="tooltip"]').tooltip({
     delay: { show: 300, hide: 150 },
     placement: 'bottom'
