@@ -1,0 +1,75 @@
+.pdf-form-viewer-layer {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  width: auto;
+  height: auto;
+  z-index: 2;
+  -webkit-backface-visibility: hidden;
+     -moz-backface-visibility: hidden;
+      -ms-backface-visibility: hidden;
+       -o-backface-visibility: hidden;
+          backface-visibility: hidden;
+  -webkit-transform-origin: 50% 0;
+     -moz-transform-origin: 50% 0;
+      -ms-transform-origin: 50% 0;
+       -o-transform-origin: 50% 0;
+          transform-origin: 50% 0;
+}
+
+.pdf-form-viewer-layer .pdf-form-field {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: auto;
+  height: auto;
+  z-index: 2;
+  -webkit-backface-visibility: hidden;
+     -moz-backface-visibility: hidden;
+      -ms-backface-visibility: hidden;
+       -o-backface-visibility: hidden;
+          backface-visibility: hidden;
+  -webkit-transform: translate(0, 0);
+     -moz-transform: translate(0, 0);
+      -ms-transform: translate(0, 0);
+       -o-transform: translate(0, 0);
+          transform: translate(0, 0);
+}
+
+.pdf-form-viewer-layer .pdf-form-field > input,
+.pdf-form-viewer-layer .pdf-form-field > label {
+  position: absolute;
+  line-height: 1em;
+  margin: 0;
+  top: 2px;
+  right: 2px;
+  bottom: 2px;
+  left: 2px;
+  width: auto;
+  height: auto;
+  z-index: 1;
+  overflow: hidden;
+}
+
+.pdf-form-viewer-layer .pdf-form-field-check-box > input {
+  visibility: hidden;
+}
+
+.pdf-form-viewer-layer .pdf-form-field-check-box > i {
+  font-family: 'FontAwesome';
+  position: absolute;
+  margin: -0.5em 0 0 -0.5em;
+  top: 50%;
+  left: 50%;
+  width: 1.5em;
+  height: 1.5em;
+}
+
+.pdf-form-viewer-layer .pdf-form-field-check-box > i:before {
+  content: '\f096';
+}
+
+.pdf-form-viewer-layer .pdf-form-field-check-box > input:checked + i:before,
+.pdf-form-viewer-layer .pdf-form-field-check-box > input[checked] + i:before {
+  content: '\f046';
+}
