@@ -1,6 +1,5 @@
-[
-  {
-    "id": 123456789001,
+{
+  "123456789001": {
     "type": "PDFFormFieldTextBox",
     "position": {
       "x": 72,
@@ -21,8 +20,7 @@
       }
     }
   },
-  {
-    "id": 123456789002,
+  "123456789002": {
     "type": "PDFFormFieldTextBox",
     "position": {
       "x": 72,
@@ -43,8 +41,7 @@
       }
     }
   },
-  {
-    "id": 123456789003,
+  "123456789003": {
     "type": "PDFFormFieldTextBox",
     "position": {
       "x": 72,
@@ -65,8 +62,7 @@
       }
     }
   },
-  {
-    "id": 123456789004,
+  "123456789004": {
     "type": "PDFFormFieldTextBox",
     "position": {
       "x": 72,
@@ -87,8 +83,7 @@
       }
     }
   },
-  {
-    "id": 123456789005,
+  "123456789005": {
     "type": "PDFFormFieldCheckBox",
     "position": {
       "x": 144,
@@ -107,8 +102,7 @@
       "styles": {}
     }
   },
-  {
-    "id": 123456789006,
+  "123456789006": {
     "type": "PDFFormFieldCheckBox",
     "position": {
       "x": 144,
@@ -127,4 +121,4 @@
       "styles": {}
     }
   }
-]
+}

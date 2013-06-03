@@ -242,11 +242,16 @@ PDFFormBuilder.prototype = {
   },
 
   serializeFields: function() {
-    var serializedFields = [];
+    var serializedFields = {};
     var formFields = this._formLayer._formFields;
 
-    for (var i = 0, length = formFields.length; i < length; i++) {
-      serializedFields.push(formFields[i].serializeField());
+    for (var i = 0, length = formFields.length, serializedField, id; i < length; i++) {
+      serializedField = formFields[i].serializeField();
+      id = serializedField.id;
+
+      delete serializedField.id;
+
+      serializedFields[id] = serializedField;
     }
 
     return serializedFields;
@@ -263,8 +268,12 @@ PDFFormBuilder.prototype = {
       while (formFields.length > 0) formFields[0].remove();
     })();
 
-    for (var i = 0, length = serializedFields.length; i < length; i++) {
-      PDFFormField.deserializeField(formLayer, serializedFields[i]);
+    var serializedField;
+    for (var id in serializedFields) {
+      serializedField = serializedFields[id];
+      serializedField.id = id;
+      
+      PDFFormField.deserializeField(formLayer, serializedField);
     }
   }
 };

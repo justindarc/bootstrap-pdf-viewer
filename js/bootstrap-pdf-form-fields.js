@@ -18,7 +18,7 @@ var PDFFormField = function PDFFormField(formLayer, x, y, w, h) {
       newTimestamp = new Date().getTime();
     }
 
-    return newTimestamp;
+    return newTimestamp + '';
   };
 
   this._id = generateUniqueId();
