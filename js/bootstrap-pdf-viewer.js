@@ -266,7 +266,7 @@ PDFViewer.prototype = {
     this._url = url;
     this._loading = true;
     
-    this._scrollView.$content.empty();
+    this._scrollView.$content.find('.pdf-viewer-page-view').remove();
     
     PDFJS.getDocument({ url: url }).then(
       function getDocumentCallback(pdfDocument) {

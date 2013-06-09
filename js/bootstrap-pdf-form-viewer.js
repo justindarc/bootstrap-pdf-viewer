@@ -114,18 +114,26 @@ PDFFormViewer.prototype = {
       while (formFields.length > 0) formFields[0].remove();
     })();
 
-    for (var i = 0, length = serializedFields.length; i < length; i++) {
-      PDFFormField.deserializeField(formLayer, serializedFields[i]);
+    var serializedField;
+    for (var id in serializedFields) {
+      serializedField = serializedFields[id];
+      serializedField.id = id;
+      
+      PDFFormField.deserializeField(formLayer, serializedField);
     }
   },
 
   serializeValues: function() {
-    var serializedValues = [];
+    var serializedValues = {};
     var formFields = this._formLayer._formFields;
 
-    for (var i = 0, length = formFields.length, serializedValue; i < length; i++) {
+    for (var i = 0, length = formFields.length, serializedValue, id; i < length; i++) {
       serializedValue = formFields[i].serializeValue();
-      if (serializedValue) serializedValues.push(serializedValue);
+      id = serializedValue.id;
+
+      delete serializedValue.id;
+
+      serializedValues[id] = serializedValue;
     }
 
     return serializedValues;
@@ -134,9 +142,11 @@ PDFFormViewer.prototype = {
   deserializeValues: function(serializedValues) {
     var formLayer = this._formLayer;
 
-    for (var i = 0, length = serializedValues.length, serializedValue, formField; i < length; i++) {
-      if (!(serializedValue = serializedValues[i])) continue;
-      if (!(formField = formLayer.getFormFieldById(serializedValue.id))) continue;
+    var serializedValue, formField;
+    for (var id in serializedValues) {
+      if (!(formField = formLayer.getFormFieldById(id))) continue;
+
+      serializedValue = serializedValues[id];
 
       formField.setValue(serializedValue.value);
     }
