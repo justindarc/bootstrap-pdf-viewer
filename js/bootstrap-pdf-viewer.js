@@ -450,24 +450,27 @@ PDFViewer.prototype = {
 
     for (i = 0, length = pageViews.length; i < length; i++) {
       pageView = pageViews[i];
-      pageViewHeight = pageView.getHeight() + PDFViewer.PAGE_SPACING;
+      pageViewHeight = pageView.getHeight() + (PDFViewer.PAGE_SPACING * 2);
       
       if (viewTop >= 0) {
         viewTop -= pageViewHeight;
         
-        if (viewTop < 0) minimumViewablePageIndex = i;
+        if (viewTop <= 0) minimumViewablePageIndex = i;
       }
       
       if (viewBottom >= 0) {
         viewBottom -= pageViewHeight;
         
-        if (viewBottom < 0) maximumViewablePageIndex = i;
+        if (viewBottom <= 0) maximumViewablePageIndex = i;
       }
       
       if (minimumViewablePageIndex > -1 && maximumViewablePageIndex > -1) break;
     }
     
-    if (minimumViewablePageIndex === -1 || maximumViewablePageIndex === -1) return;
+    console.log(minimumViewablePageIndex, maximumViewablePageIndex);
+
+    if (minimumViewablePageIndex === -1) return;
+    if (maximumViewablePageIndex === -1) maximumViewablePageIndex = 0;
 
     this._currentPageIndex = minimumViewablePageIndex;
 
