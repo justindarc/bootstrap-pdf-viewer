@@ -1,7 +1,9 @@
 ;'use strict';
 
-var PDFFormViewer = function PDFFormViewer(viewer) {
+var PDFFormViewer = function PDFFormViewer(viewer, options) {
   if (!(viewer instanceof PDFViewer)) return console.error('Invalid instance of PDFViewer', viewer);
+
+  options = options || {};
 
   this._viewer = viewer;
 
@@ -14,14 +16,15 @@ var PDFFormViewer = function PDFFormViewer(viewer) {
 
   var $style = this.$style = $('<style/>').appendTo(document.body);
 
+  var toolbarActions = this._toolbarActions = {};
 
   var $navbarContainer = viewer.$navbarContainer;
   var $navbarLeft = viewer.$navbarLeft;
 
-  $('<li><a href="#open-form" rel="tooltip" title="Open Form"><i class="icon-upload-alt"/></a></li>').appendTo($navbarLeft);
-  $('<li class="divider"/>').appendTo($navbarLeft);
-  $('<li><a href="#open-data" rel="tooltip" title="Open Data"><i class="icon-upload-alt"/></a></li>').appendTo($navbarLeft);
-  $('<li><a href="#save-data" rel="tooltip" title="Save Data"><i class="icon-save"/></a></li>').appendTo($navbarLeft);
+  if (!options.hideOpenFormButton) $('<li><a href="#open-form" rel="tooltip" title="Open Form"><i class="icon-upload-alt"/></a></li>').appendTo($navbarLeft);
+  if (!options.hideOpenFormButton) $('<li class="divider"/>').appendTo($navbarLeft);
+  if (!options.hideOpenDataButton) $('<li><a href="#open-data" rel="tooltip" title="Open Data"><i class="icon-upload-alt"/></a></li>').appendTo($navbarLeft);
+  if (!options.hideSaveDataButton) $('<li><a href="#save-data" rel="tooltip" title="Save Data"><i class="icon-save"/></a></li>').appendTo($navbarLeft);
 
   $navbarContainer.delegate('a', 'click', function(evt) {
     evt.preventDefault();
@@ -29,6 +32,11 @@ var PDFFormViewer = function PDFFormViewer(viewer) {
     var $button = $(this);
     var href = $button.attr('href');
     var position = viewer.getScrollView().getPosition();
+
+    if (typeof toolbarActions[href] === 'function') {
+      toolbarActions[href].call(self);
+      return;
+    }
 
     switch (href) {
       case '#open-form':
@@ -108,6 +116,12 @@ PDFFormViewer.prototype = {
     for (var i = 0, length = pageViews.length; i < length; i++) {
       formLayers.push(new PDFFormLayer(viewer, pageViews[i]));
     }
+  },
+
+  _toolbarActions: null,
+
+  setToolbarAction: function(action, callback) {
+    this._toolbarActions[action] = callback;
   },
 
   _focusedFormField: null,

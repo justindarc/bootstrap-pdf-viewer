@@ -69,7 +69,15 @@
 
       $(function() {
         viewer = new PDFViewer($('#viewer'));
-        formViewer = new PDFFormViewer(viewer);
+        formViewer = new PDFFormViewer(viewer, {
+          hideOpenFormButton: false, // Default: false
+          hideOpenDataButton: false, // Default: false
+          hideSaveDataButton: false  // Default: false
+        });
+
+        formViewer.setToolbarAction('#save-data', function() {
+          console.log(this.serializeValues());
+        });
       });
     </script>
   </body>

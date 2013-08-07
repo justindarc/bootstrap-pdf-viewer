@@ -466,8 +466,6 @@ PDFViewer.prototype = {
       
       if (minimumViewablePageIndex > -1 && maximumViewablePageIndex > -1) break;
     }
-    
-    console.log(minimumViewablePageIndex, maximumViewablePageIndex);
 
     if (minimumViewablePageIndex === -1) return;
     if (maximumViewablePageIndex === -1) maximumViewablePageIndex = 0;

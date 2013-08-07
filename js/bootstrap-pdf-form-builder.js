@@ -1,7 +1,9 @@
 ;'use strict';
 
-var PDFFormBuilder = function PDFFormBuilder(viewer) {
+var PDFFormBuilder = function PDFFormBuilder(viewer, options) {
   if (!(viewer instanceof PDFViewer)) return console.error('Invalid instance of PDFViewer', viewer);
+
+  options = options || {};
 
   this._viewer = viewer;
 
@@ -15,14 +17,16 @@ var PDFFormBuilder = function PDFFormBuilder(viewer) {
   var $style = this.$style = $('<style/>').appendTo(document.body);
   var $panel = this.$panel = $('<div class="pdf-form-builder-panel"/>').prependTo(viewer.$viewerContainer);
 
+  var toolbarActions = this._toolbarActions = {};
+
   var $navbarContainer = viewer.$navbarContainer;
   var $navbarLeft = viewer.$navbarLeft;
 
   $('<li><a href="#properties" rel="tooltip" title="Toggle Properties"><i class="icon-list-alt"/></a></li>').appendTo($navbarLeft);
   $('<li class="divider"/>').appendTo($navbarLeft);
-  $('<li><a href="#open-form" rel="tooltip" title="Open Form"><i class="icon-upload-alt"/></a></li>').appendTo($navbarLeft);
-  $('<li><a href="#save-form" rel="tooltip" title="Save Form"><i class="icon-save"/></a></li>').appendTo($navbarLeft);
-  $('<li class="divider"/>').appendTo($navbarLeft);
+  if (!options.hideOpenFormButton) $('<li><a href="#open-form" rel="tooltip" title="Open Form"><i class="icon-upload-alt"/></a></li>').appendTo($navbarLeft);
+  if (!options.hideSaveFormButton) $('<li><a href="#save-form" rel="tooltip" title="Save Form"><i class="icon-save"/></a></li>').appendTo($navbarLeft);
+  if (!options.hideOpenFormButton && !options.hideSaveFormButton) $('<li class="divider"/>').appendTo($navbarLeft);
   $('<li><a href="#label" rel="tooltip" title="Label"><i class="icon-font"/></a></li>').appendTo($navbarLeft);
   $('<li><a href="#textbox" rel="tooltip" title="Text Field"><i class="icon-edit"/></a></li>').appendTo($navbarLeft);
   $('<li><a href="#textarea" rel="tooltip" title="Text Area"><i class="icon-comments-alt"/></a></li>').appendTo($navbarLeft);
@@ -36,6 +40,11 @@ var PDFFormBuilder = function PDFFormBuilder(viewer) {
     var $button = $(this);
     var href = $button.attr('href');
     var position = viewer.getScrollView().getPosition();
+
+    if (typeof toolbarActions[href] === 'function') {
+      toolbarActions[href].call(self);
+      return;
+    }
 
     switch (href) {
       case '#properties':
@@ -207,6 +216,12 @@ PDFFormBuilder.prototype = {
     for (var i = 0, length = pageViews.length; i < length; i++) {
       formLayers.push(new PDFFormLayer(viewer, pageViews[i]));
     }
+  },
+
+  _toolbarActions: null,
+
+  setToolbarAction: function(action, callback) {
+    this._toolbarActions[action] = callback;
   },
 
   _snapToGrid: false,

@@ -69,7 +69,14 @@
 
       $(function() {
         viewer = new PDFViewer($('#viewer'));
-        formBuilder = new PDFFormBuilder(viewer);
+        formBuilder = new PDFFormBuilder(viewer, {
+          hideOpenFormButton: false, // Default: false
+          hideSaveFormButton: false  // Default: false
+        });
+
+        formBuilder.setToolbarAction('#save-form', function() {
+          console.log(this.serializeFormLayers());
+        });
       });
     </script>
   </body>
