@@ -24,11 +24,10 @@ var PDFViewer = function PDFViewer(element) {
   var $html   = $(document.documentElement);
   var $body   = $(document.body);
   
-  var $navbarContainer = this.$navbarContainer = $('<div class="navbar"/>').appendTo($element);
-  var $navbarInner = $('<div class="navbar-inner"/>').appendTo($navbarContainer);
+  var $navbar = this.$navbar = $('<div class="navbar navbar-static-top"/>').appendTo($element);
   
-  var $navbarLeft  = this.$navbarLeft  = $('<ul class="nav pull-left"/>' ).appendTo($navbarInner);
-  var $navbarRight = this.$navbarRight = $('<ul class="nav pull-right"/>').appendTo($navbarInner);
+  var $navbarLeft  = this.$navbarLeft  = $('<ul class="nav navbar-nav pull-left"/>' ).appendTo($navbar);
+  var $navbarRight = this.$navbarRight = $('<ul class="nav navbar-nav pull-right"/>').appendTo($navbar);
   
   $('<li class="dropdown">' +
     '<a href="#" class="dropdown-toggle" data-toggle="dropdown"><i class="icon-zoom-in"/> <b class="caret"/></a>' +
@@ -52,7 +51,7 @@ var PDFViewer = function PDFViewer(element) {
   if (PDFViewer.IS_TOUCH_SUPPORTED) (function() {
     var $element = null;
 
-    $navbarInner.delegate('a', 'touchstart', function(evt) {
+    $navbar.delegate('a', 'touchstart', function(evt) {
       $element = $(this);
     });
 
@@ -72,12 +71,12 @@ var PDFViewer = function PDFViewer(element) {
     });
   })();
 
-  $navbarInner.find('[rel="tooltip"], [data-rel="tooltip"]').tooltip({
+  $navbar.find('[rel="tooltip"], [data-rel="tooltip"]').tooltip({
     delay: { show: 300, hide: 150 },
     placement: 'bottom'
   });
   
-  $navbarInner.delegate('a', 'click', function(evt) {
+  $navbar.delegate('a', 'click', function(evt) {
     evt.preventDefault();
 
     var $button = $(this);
@@ -238,7 +237,7 @@ PDFViewer.prototype = {
   element: null,
   $element: null,
   
-  $navbarContainer: null,
+  $navbar: null,
   $navbarLeft: null,
   $navbarRight: null,
   $viewerContainer: null,

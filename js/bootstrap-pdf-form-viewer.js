@@ -18,7 +18,7 @@ var PDFFormViewer = function PDFFormViewer(viewer, options) {
 
   var toolbarActions = this._toolbarActions = {};
 
-  var $navbarContainer = viewer.$navbarContainer;
+  var $navbar = viewer.$navbar;
   var $navbarLeft = viewer.$navbarLeft;
 
   if (!options.hideOpenFormButton) $('<li><a href="#open-form" rel="tooltip" title="Open Form"><i class="icon-upload-alt"/></a></li>').appendTo($navbarLeft);
@@ -26,7 +26,7 @@ var PDFFormViewer = function PDFFormViewer(viewer, options) {
   if (!options.hideOpenDataButton) $('<li><a href="#open-data" rel="tooltip" title="Open Data"><i class="icon-upload-alt"/></a></li>').appendTo($navbarLeft);
   if (!options.hideSaveDataButton) $('<li><a href="#save-data" rel="tooltip" title="Save Data"><i class="icon-save"/></a></li>').appendTo($navbarLeft);
 
-  $navbarContainer.delegate('a', 'click', function(evt) {
+  $navbar.delegate('a', 'click', function(evt) {
     evt.preventDefault();
 
     var $button = $(this);

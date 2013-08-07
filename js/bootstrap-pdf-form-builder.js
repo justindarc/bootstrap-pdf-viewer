@@ -19,7 +19,7 @@ var PDFFormBuilder = function PDFFormBuilder(viewer, options) {
 
   var toolbarActions = this._toolbarActions = {};
 
-  var $navbarContainer = viewer.$navbarContainer;
+  var $navbar = viewer.$navbar;
   var $navbarLeft = viewer.$navbarLeft;
 
   $('<li><a href="#properties" rel="tooltip" title="Toggle Properties"><i class="icon-list-alt"/></a></li>').appendTo($navbarLeft);
@@ -34,7 +34,7 @@ var PDFFormBuilder = function PDFFormBuilder(viewer, options) {
   $('<li class="divider"/>').appendTo($navbarLeft);
   $('<li><a href="#snap-to-grid" rel="tooltip" title="Snap To Grid"><i class="icon-th"/></a></li>').appendTo($navbarLeft);
 
-  $navbarContainer.delegate('a', 'click', function(evt) {
+  $navbar.delegate('a', 'click', function(evt) {
     evt.preventDefault();
 
     var $button = $(this);
