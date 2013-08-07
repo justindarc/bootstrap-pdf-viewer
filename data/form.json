@@ -1,124 +1,58 @@
 {
-  "123456789001": {
-    "type": "PDFFormFieldTextBox",
-    "position": {
-      "x": 72,
-      "y": 148
-    },
-    "size": {
-      "w": 425,
-      "h": 25
-    },
-    "properties": {
-      "attributes": {
-        "name": "first_name",
-        "placeholder": "e.g.: Johnny",
-        "tabindex": "1"
+  "0": {
+    "1375333076870": {
+      "type": "PDFFormField",
+      "position": {
+        "x": 10,
+        "y": 35
       },
-      "styles": {
-        "font-size": "16px"
+      "size": {
+        "w": 10,
+        "h": 10
+      },
+      "properties": {
+        "attributes": {},
+        "styles": {
+          "element": {},
+          "input": {}
+        }
       }
-    }
-  },
-  "123456789002": {
-    "type": "PDFFormFieldTextBox",
-    "position": {
-      "x": 72,
-      "y": 202
     },
-    "size": {
-      "w": 425,
-      "h": 25
-    },
-    "properties": {
-      "attributes": {
-        "name": "last_name",
-        "placeholder": "e.g.: Appleseed",
-        "tabindex": "2"
+    "1375333080517": {
+      "type": "PDFFormField",
+      "position": {
+        "x": 65,
+        "y": 40
       },
-      "styles": {
-        "font-size": "16px"
+      "size": {
+        "w": 10,
+        "h": 8
+      },
+      "properties": {
+        "attributes": {},
+        "styles": {
+          "element": {},
+          "input": {}
+        }
       }
-    }
-  },
-  "123456789003": {
-    "type": "PDFFormFieldTextBox",
-    "position": {
-      "x": 72,
-      "y": 258
     },
-    "size": {
-      "w": 425,
-      "h": 25
-    },
-    "properties": {
-      "attributes": {
-        "name": "phone_number",
-        "placeholder": "e.g.: 123-456-7890",
-        "tabindex": "3"
+    "1375333085176": {
+      "type": "PDFFormField",
+      "position": {
+        "x": 45,
+        "y": 50
       },
-      "styles": {
-        "font-size": "16px"
+      "size": {
+        "w": 10,
+        "h": 2
+      },
+      "properties": {
+        "attributes": {},
+        "styles": {
+          "element": {},
+          "input": {}
+        }
       }
-    }
-  },
-  "123456789004": {
-    "type": "PDFFormFieldTextBox",
-    "position": {
-      "x": 72,
-      "y": 314
-    },
-    "size": {
-      "w": 425,
-      "h": 25
-    },
-    "properties": {
-      "attributes": {
-        "name": "email_address",
-        "placeholder": "e.g.: johnny@example.com",
-        "tabindex": "4"
-      },
-      "styles": {
-        "font-size": "16px"
-      }
-    }
-  },
-  "123456789005": {
-    "type": "PDFFormFieldCheckBox",
-    "position": {
-      "x": 144,
-      "y": 378
-    },
-    "size": {
-      "w": 24.5,
-      "h": 15
-    },
-    "properties": {
-      "attributes": {
-        "name": "contact_phone",
-        "checked": false,
-        "tabindex": "5"
-      },
-      "styles": {}
-    }
-  },
-  "123456789006": {
-    "type": "PDFFormFieldCheckBox",
-    "position": {
-      "x": 144,
-      "y": 408
-    },
-    "size": {
-      "w": 24.5,
-      "h": 15
-    },
-    "properties": {
-      "attributes": {
-        "name": "contact_email",
-        "checked": false,
-        "tabindex": "6"
-      },
-      "styles": {}
     }
   }
 }

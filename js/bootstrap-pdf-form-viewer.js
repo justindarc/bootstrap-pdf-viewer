@@ -1,20 +1,20 @@
 ;'use strict';
 
-var PDFFormViewer = function PDFFormViewer(pdfViewer) {
-  if (!(pdfViewer instanceof PDFViewer)) return console.error("Invalid instance of PDFViewer", pdfViewer);
+var PDFFormViewer = function PDFFormViewer(viewer) {
+  if (!(viewer instanceof PDFViewer)) return console.error('Invalid instance of PDFViewer', viewer);
 
-  this._pdfViewer = pdfViewer;
+  this._viewer = viewer;
 
-  var self = pdfViewer._formViewer = this;
+  var self = viewer._formViewer = this;
 
-  pdfViewer.getFormViewer = function() { return this._formViewer; };
+  viewer.getFormViewer = function() { return this._formViewer; };
 
   var formLayer = this._formLayer = new PDFFormViewerLayer(this);
 
   var scale = this._scale = { x: 1, y: 1 };
 
-  var $navbarContainer = pdfViewer.$navbarContainer;
-  var $navbarLeft = pdfViewer.$navbarLeft;
+  var $navbarContainer = viewer.$navbarContainer;
+  var $navbarLeft = viewer.$navbarLeft;
 
   $('<li><a href="#open-form" rel="tooltip" title="Open Form"><i class="icon-upload-alt"/></a></li>').appendTo($navbarLeft);
   $('<li class="divider"/>').appendTo($navbarLeft);
@@ -73,10 +73,10 @@ var PDFFormViewer = function PDFFormViewer(pdfViewer) {
     }
   });
 
-  pdfViewer.$element.on(PDFViewer.EventType.ScaleChange, function(evt) {
-    var width  = pdfViewer.getActualWidth();
-    var height = pdfViewer.getActualHeight();
-    var margin = pdfViewer.getNumberOfPages() * 10;
+  viewer.$element.on(PDFViewer.EventType.ScaleChange, function(evt) {
+    var width  = viewer.getActualWidth();
+    var height = viewer.getActualHeight();
+    var margin = viewer.getNumberOfPages() * 10;
     var scaleX = scale.x = evt.calculatedScale;
     var scaleY = scale.y = ((height * scaleX) + margin) / height;
 
@@ -96,7 +96,7 @@ var PDFFormViewer = function PDFFormViewer(pdfViewer) {
 PDFFormViewer.prototype = {
   constructor: PDFFormViewer,
 
-  _pdfViewer: null,
+  _viewer: null,
   _formLayer: null,
 
   _scale: null,
@@ -154,11 +154,11 @@ PDFFormViewer.prototype = {
 };
 
 var PDFFormViewerLayer = function PDFFormViewerLayer(formViewer) {
-  if (!(formViewer instanceof PDFFormViewer)) return console.error("Invalid instance of PDFFormViewer", formViewer);
+  if (!(formViewer instanceof PDFFormViewer)) return console.error('Invalid instance of PDFFormViewer', formViewer);
 
   this._formViewer = formViewer;
 
-  var $element = this.$element = $('<div class="pdf-form-viewer-layer"/>').appendTo(formViewer._pdfViewer.getScrollView().$content);
+  var $element = this.$element = $('<div class="pdf-form-viewer-layer"/>').appendTo(formViewer._viewer.getScrollView().$content);
   var element  = this.element  = $element[0];
 
   var self = element.formLayer = this;
@@ -169,7 +169,7 @@ var PDFFormViewerLayer = function PDFFormViewerLayer(formViewer) {
 PDFFormViewerLayer.prototype = {
   constructor: PDFFormViewerLayer,
 
-  _pdfViewer: null,
+  _viewer: null,
   _formViewer: null,
 
   element: null,
