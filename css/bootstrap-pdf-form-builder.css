@@ -1,12 +1,3 @@
-.pdf-form-layer {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  overflow: hidden;
-}
-
 .pdf-form-builder-panel {
   background: #e0e0e0;
   position: absolute;
