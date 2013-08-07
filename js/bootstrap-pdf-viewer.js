@@ -15,10 +15,10 @@ var PDFViewer = function PDFViewer(element) {
   var $element = this.$element = $(element);
   element = this.element = $element[0];
   
-  var pdfViewer = element.pdfViewer;
-  if (pdfViewer) return pdfViewer;
+  var viewer = element.viewer;
+  if (viewer) return viewer;
   
-  var self = element.pdfViewer = this;
+  var self = element.viewer = this;
   
   var $window = $(window);
   var $html   = $(document.documentElement);
@@ -38,7 +38,6 @@ var PDFViewer = function PDFViewer(element) {
       '<li><a href="#zoom" data-value="' + PDFViewer.Scale.PAGE_HEIGHT + '"><i/> Page Height</a></li>' +
       '<li><a href="#zoom" data-value="' + PDFViewer.Scale.PAGE_FIT + '"><i/> Page Fit</a></li>' +
       '<li class="divider"/>' +
-      '<li><a href="#zoom" data-value="' + PDFViewer.Scale.PERCENT_25  + '"><i/> 25%</a></li>' +
       '<li><a href="#zoom" data-value="' + PDFViewer.Scale.PERCENT_50  + '"><i/> 50%</a></li>' +
       '<li><a href="#zoom" data-value="' + PDFViewer.Scale.PERCENT_75  + '"><i/> 75%</a></li>' +
       '<li><a href="#zoom" data-value="' + PDFViewer.Scale.PERCENT_100 + '"><i/> 100%</a></li>' +
@@ -48,10 +47,9 @@ var PDFViewer = function PDFViewer(element) {
     '</ul>' +
   '</li>').appendTo($navbarRight);
 
-  var isTouchSupported = !!('ontouchstart' in window);
-  if (!isTouchSupported) $('<li><a href="#full-screen" rel="tooltip" title="Full Screen"><i class="icon-fullscreen"/></a></li>').appendTo($navbarRight);
+  if (!PDFViewer.IS_TOUCH_SUPPORTED) $('<li><a href="#full-screen" rel="tooltip" title="Full Screen"><i class="icon-fullscreen"/></a></li>').appendTo($navbarRight);
   
-  if (isTouchSupported) (function() {
+  if (PDFViewer.IS_TOUCH_SUPPORTED) (function() {
     var $element = null;
 
     $navbarInner.delegate('a', 'touchstart', function(evt) {
@@ -159,11 +157,12 @@ var PDFViewer = function PDFViewer(element) {
   if (url) this.setUrl(url);
 };
 
-PDFViewer.MINIMUM_HEIGHT    = 400;
-PDFViewer.PAGE_SPACING      = 10;
-PDFViewer.UPDATE_TIMEOUT    = 100;
-PDFViewer.SCROLLBAR_PADDING = 20;
-PDFViewer.RESIZE_TIMEOUT    = 1000;
+PDFViewer.MINIMUM_HEIGHT     = 400;
+PDFViewer.PAGE_SPACING       = 10;
+PDFViewer.UPDATE_TIMEOUT     = 100;
+PDFViewer.SCROLLBAR_PADDING  = 20;
+PDFViewer.RESIZE_TIMEOUT     = 1000;
+PDFViewer.IS_TOUCH_SUPPORTED = !!('ontouchstart' in window);
 
 PDFViewer.RenderingStateType = {
   INITIAL:  0,
@@ -229,7 +228,8 @@ PDFViewer.Util = {
 };
 
 PDFViewer.EventType = {
-  ScaleChange: 'PDFViewer:ScaleChange',
+  Ready:       'PDFViewer:Ready',
+  ScaleChange: 'PDFViewer:ScaleChange'
 };
 
 PDFViewer.prototype = {
@@ -383,11 +383,13 @@ PDFViewer.prototype = {
   
   getPageViews: function() { return this._pageViews; },
   
-  _currentPageViewIndex: -1,
+  _currentPageIndex: -1,
+
+  getCurrentPageIndex: function() { return this._currentPageIndex; },
 
   getCurrentPageView: function() {
     var pageViews = this._pageViews;
-    var index = this._currentPageViewIndex;
+    var index = this._currentPageIndex;
     if (index < 0 || !pageViews || pageViews.length === 0) return null;
 
     return pageViews[index];
@@ -423,7 +425,11 @@ PDFViewer.prototype = {
       self.optimizeHeight();
       self.updateView();
 
-      self.$element.trigger($.Event(PDFViewer.EventType.ScaleChange, {
+      var $element = self.$element;
+
+      $element.trigger($.Event(PDFViewer.EventType.Ready));
+
+      $element.trigger($.Event(PDFViewer.EventType.ScaleChange, {
         scale: self._scale,
         calculatedScale: (self._lastCalculatedScale = self.getCalculatedScale())
       }));
@@ -444,26 +450,27 @@ PDFViewer.prototype = {
 
     for (i = 0, length = pageViews.length; i < length; i++) {
       pageView = pageViews[i];
-      pageViewHeight = pageView.getHeight() + PDFViewer.PAGE_SPACING;
+      pageViewHeight = pageView.getHeight() + (PDFViewer.PAGE_SPACING * 2);
       
       if (viewTop >= 0) {
         viewTop -= pageViewHeight;
         
-        if (viewTop < 0) minimumViewablePageIndex = i;
+        if (viewTop <= 0) minimumViewablePageIndex = i;
       }
       
       if (viewBottom >= 0) {
         viewBottom -= pageViewHeight;
         
-        if (viewBottom < 0) maximumViewablePageIndex = i;
+        if (viewBottom <= 0) maximumViewablePageIndex = i;
       }
       
       if (minimumViewablePageIndex > -1 && maximumViewablePageIndex > -1) break;
     }
-    
-    if (minimumViewablePageIndex === -1 || maximumViewablePageIndex === -1) return;
 
-    this._currentPageViewIndex = minimumViewablePageIndex;
+    if (minimumViewablePageIndex === -1) return;
+    if (maximumViewablePageIndex === -1) maximumViewablePageIndex = 0;
+
+    this._currentPageIndex = minimumViewablePageIndex;
 
     for (i = 0, length = pageViews.length; i < length; i++) {
       pageView = pageViews[i];
@@ -526,8 +533,10 @@ PDFViewer.prototype = {
   }
 };
 
-var PDFViewerPageView = function PDFViewerPageView(pdfViewer, page) {
-  this._pdfViewer = pdfViewer;
+var PDFViewerPageView = function PDFViewerPageView(viewer, page) {
+  if (!(viewer instanceof PDFViewer)) return console.error('Invalid instance of PDFViewer', viewer);
+
+  this._viewer = viewer;
   this._page = page;
   
   this.renderingState = PDFViewer.RenderingStateType.INITIAL;
@@ -544,7 +553,7 @@ var PDFViewerPageView = function PDFViewerPageView(pdfViewer, page) {
   this._actualWidth  = Math.round(actualViewport.width);
   this._actualHeight = Math.round(actualViewport.height);
 
-  pdfViewer.getScrollView().$content.append($element);
+  viewer.getScrollView().$content.append($element);
 };
 
 PDFViewerPageView.prototype = {
@@ -555,9 +564,9 @@ PDFViewerPageView.prototype = {
   
   canvas: null,
   
-  _pdfViewer: null,
+  _viewer: null,
   
-  getPdfViewer: function() { return this._pdfViewer; },
+  getViewer: function() { return this._viewer; },
   
   _page: null,
   
@@ -649,7 +658,7 @@ PDFViewerPageView.prototype = {
 
   updateViewportSize: function() {
     var page     = this._page;
-    var viewport = this._viewport = page.getViewport(this._pdfViewer.calculateScale(page), page.rotate);
+    var viewport = this._viewport = page.getViewport(this._viewer.calculateScale(page), page.rotate);
     var width    = this._width    = Math.round(viewport.width);
     var height   = this._height   = Math.round(viewport.height);
 
@@ -662,7 +671,7 @@ PDFViewerPageView.prototype = {
     var devicePixelRatio = window.devicePixelRatio || 1;
 
     var page     = this._page;
-    var viewport = this._viewport = page.getViewport(this._pdfViewer.calculateScale(page), page.rotate);
+    var viewport = this._viewport = page.getViewport(this._viewer.calculateScale(page), page.rotate);
 
     var width  = this._width  * devicePixelRatio;
     var height = this._height * devicePixelRatio;
@@ -855,9 +864,7 @@ var PDFScrollView = function PDFScrollView(element) {
       position    = this._position    = { x: 0, y: 0 },
       maxPosition = this._maxPosition = { x: 0, y: 0 };
 
-  var isTouchSupported = !!('ontouchstart' in window);
-
-  if (!isTouchSupported) {
+  if (!PDFViewer.IS_TOUCH_SUPPORTED) {
     this._useTouchScrolling = false;
 
     $element.addClass('pdf-scroll-view-no-touch');
@@ -989,8 +996,8 @@ var PDFScrollView = function PDFScrollView(element) {
   var touchEndHandler = function(evt) {
     lastTouchIdentifier = null;
 
-    $window.off(isTouchSupported ? 'touchmove' : 'mousemove', touchMoveHandler);
-    $window.off(isTouchSupported ? 'touchend'  : 'mouseup',   touchEndHandler);
+    $window.off(PDFViewer.IS_TOUCH_SUPPORTED ? 'touchmove' : 'mousemove', touchMoveHandler);
+    $window.off(PDFViewer.IS_TOUCH_SUPPORTED ? 'touchend'  : 'mouseup',   touchEndHandler);
 
     var time = evt.timeStamp, accelerationTime = time - startAccelerateTime;
     if (accelerationTime < Options.accelerationTimeout) {
@@ -1007,17 +1014,17 @@ var PDFScrollView = function PDFScrollView(element) {
     }
   };
 
-  $element.on(isTouchSupported ? 'touchstart' : 'mousedown', function(evt) {
+  $element.on(PDFViewer.IS_TOUCH_SUPPORTED ? 'touchstart' : 'mousedown', function(evt) {
     lastTouchPosition = Util.getPositionForEvent(evt);
-    lastTouchIdentifier = (isTouchSupported) ? evt.originalEvent.targetTouches[0].identifier : null;
+    lastTouchIdentifier = (PDFViewer.IS_TOUCH_SUPPORTED) ? evt.originalEvent.targetTouches[0].identifier : null;
     
     stopDeceleration();
     resetStartAccelerate(evt.timeStamp);
 
     self.recalculateDimensions();
 
-    $window.on(isTouchSupported ? 'touchmove' : 'mousemove', touchMoveHandler);
-    $window.on(isTouchSupported ? 'touchend'  : 'mouseup',   touchEndHandler);
+    $window.on(PDFViewer.IS_TOUCH_SUPPORTED ? 'touchmove' : 'mousemove', touchMoveHandler);
+    $window.on(PDFViewer.IS_TOUCH_SUPPORTED ? 'touchend'  : 'mouseup',   touchEndHandler);
   });
 };
 

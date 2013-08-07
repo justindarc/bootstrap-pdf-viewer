@@ -61,15 +61,23 @@
     <!-- Bootstrap PDF Viewer -->
     <script src="lib/pdf.js"></script>
     <script src="js/bootstrap-pdf-viewer.js"></script>
-    <script src="js/bootstrap-pdf-form-fields.js"></script>
     <script src="js/bootstrap-pdf-form-viewer.js"></script>
+    <script src="js/bootstrap-pdf-form-common.js"></script>
 
     <script>
       var viewer, formViewer;
 
       $(function() {
         viewer = new PDFViewer($('#viewer'));
-        formViewer = new PDFFormViewer(viewer);
+        formViewer = new PDFFormViewer(viewer, {
+          hideOpenFormButton: false, // Default: false
+          hideOpenDataButton: false, // Default: false
+          hideSaveDataButton: false  // Default: false
+        });
+
+        formViewer.setToolbarAction('#save-data', function() {
+          console.log(this.serializeValues());
+        });
       });
     </script>
   </body>

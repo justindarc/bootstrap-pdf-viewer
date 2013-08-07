@@ -1,39 +1,50 @@
 ;'use strict';
 
-var PDFFormBuilder = function PDFFormBuilder(pdfViewer) {
-  if (!(pdfViewer instanceof PDFViewer)) return console.error("Invalid instance of PDFViewer", pdfViewer);
+var PDFFormBuilder = function PDFFormBuilder(viewer, options) {
+  if (!(viewer instanceof PDFViewer)) return console.error('Invalid instance of PDFViewer', viewer);
 
-  this._pdfViewer = pdfViewer;
+  options = options || {};
 
-  var $panel = this.$panel = $('<div class="pdf-form-builder-panel"/>').prependTo(pdfViewer.$viewerContainer);
-  this.setFocusedFormField(null);
+  this._viewer = viewer;
 
-  var self = pdfViewer._formBuilder = this;
+  var self = viewer._formBuilder = this;
 
-  pdfViewer.getFormBuilder = function() { return this._formBuilder; };
+  viewer.getFormBuilder = function() { return this._formBuilder; };
 
-  var formLayer = this._formLayer = new PDFFormBuilderLayer(this);
+  var $element = viewer.$element;
+  $element.addClass('pdf-form-builder');
 
-  var scale = this._scale = { x: 1, y: 1 };
+  var $style = this.$style = $('<style/>').appendTo(document.body);
+  var $panel = this.$panel = $('<div class="pdf-form-builder-panel"/>').prependTo(viewer.$viewerContainer);
 
-  var $navbarContainer = pdfViewer.$navbarContainer;
-  var $navbarLeft = pdfViewer.$navbarLeft;
+  var toolbarActions = this._toolbarActions = {};
+
+  var $navbarContainer = viewer.$navbarContainer;
+  var $navbarLeft = viewer.$navbarLeft;
 
   $('<li><a href="#properties" rel="tooltip" title="Toggle Properties"><i class="icon-list-alt"/></a></li>').appendTo($navbarLeft);
   $('<li class="divider"/>').appendTo($navbarLeft);
-  $('<li><a href="#open-form" rel="tooltip" title="Open Form"><i class="icon-upload-alt"/></a></li>').appendTo($navbarLeft);
-  $('<li><a href="#save-form" rel="tooltip" title="Save Form"><i class="icon-save"/></a></li>').appendTo($navbarLeft);
-  $('<li class="divider"/>').appendTo($navbarLeft);
+  if (!options.hideOpenFormButton) $('<li><a href="#open-form" rel="tooltip" title="Open Form"><i class="icon-upload-alt"/></a></li>').appendTo($navbarLeft);
+  if (!options.hideSaveFormButton) $('<li><a href="#save-form" rel="tooltip" title="Save Form"><i class="icon-save"/></a></li>').appendTo($navbarLeft);
+  if (!options.hideOpenFormButton && !options.hideSaveFormButton) $('<li class="divider"/>').appendTo($navbarLeft);
   $('<li><a href="#label" rel="tooltip" title="Label"><i class="icon-font"/></a></li>').appendTo($navbarLeft);
   $('<li><a href="#textbox" rel="tooltip" title="Text Field"><i class="icon-edit"/></a></li>').appendTo($navbarLeft);
+  $('<li><a href="#textarea" rel="tooltip" title="Text Area"><i class="icon-comments-alt"/></a></li>').appendTo($navbarLeft);
   $('<li><a href="#checkbox" rel="tooltip" title="Checkbox"><i class="icon-check"/></a></li>').appendTo($navbarLeft);
-  
+  $('<li class="divider"/>').appendTo($navbarLeft);
+  $('<li><a href="#snap-to-grid" rel="tooltip" title="Snap To Grid"><i class="icon-th"/></a></li>').appendTo($navbarLeft);
+
   $navbarContainer.delegate('a', 'click', function(evt) {
     evt.preventDefault();
 
     var $button = $(this);
     var href = $button.attr('href');
-    var position = pdfViewer.getScrollView().getPosition();
+    var position = viewer.getScrollView().getPosition();
+
+    if (typeof toolbarActions[href] === 'function') {
+      toolbarActions[href].call(self);
+      return;
+    }
 
     switch (href) {
       case '#properties':
@@ -43,60 +54,75 @@ var PDFFormBuilder = function PDFFormBuilder(pdfViewer) {
         break;
       case '#open-form':
         (function() {
-          var serializedFields = window.prompt('Enter Form Field data in JSON format:\n\n(or press "OK" to load sample form)');
-          if (serializedFields === null) return;
+          var serializedFormLayers = window.prompt('Enter Form Layer data in JSON format:\n\n(or press "OK" to load sample form)');
+          if (serializedFormLayers === null) return;
 
-          serializedFields = $.trim(serializedFields);
-          if (serializedFields) {
-            self.deserializeFields(JSON.parse(serializedFields), true);
+          serializedFormLayers = $.trim(serializedFormLayers);
+          if (serializedFormLayers) {
+            self.deserializeFormLayers(JSON.parse(serializedFormLayers), true);
           }
 
           else {
             $.getJSON('data/form.json', function(data) {
-              self.deserializeFields(data, true);
+              self.deserializeFormLayers(data, true);
             });
           }
         })();
         break;
       case '#save-form':
         (function() {
-          var serializedFields = JSON.stringify(self.serializeFields());
-          window.alert(serializedFields);
+          var serializedFormLayers = JSON.stringify(self.serializeFormLayers());
+          window.alert(serializedFormLayers);
         })();
         break;
       case '#label':
         (function() {
-          var field = new PDFFormFieldLabel(formLayer, position.x + 50, position.y + 50);
+          self.getCurrentFormLayer().addFormField(new PDFFormFieldLabel());
         })();
         break;
       case '#textbox':
         (function() {
-          var field = new PDFFormFieldTextBox(formLayer, position.x + 50, position.y + 50);
+          self.getCurrentFormLayer().addFormField(new PDFFormFieldTextBox());
+        })();
+        break;
+      case '#textarea':
+        (function() {
+          self.getCurrentFormLayer().addFormField(new PDFFormFieldTextArea());
         })();
         break;
       case '#checkbox':
         (function() {
-          var field = new PDFFormFieldCheckBox(formLayer, position.x + 50, position.y + 50);
+          self.getCurrentFormLayer().addFormField(new PDFFormFieldCheckBox());
         })();
         break;
+      case '#snap-to-grid':
+        (function() {
+          var snapToGrid = !self.getSnapToGrid();
+          self.setSnapToGrid(snapToGrid);
+
+          if (snapToGrid) {
+            $button.parent().addClass('active');
+          }
+
+          else {
+            $button.parent().removeClass('active');
+          }
+        })();
       default:
         break;
     }
   });
 
-  var isTouchSupported = !!('ontouchstart' in window);
-  formLayer.$element.on(isTouchSupported ? 'touchstart' : 'mousedown', function(evt) {
+  $element.on(PDFViewer.IS_TOUCH_SUPPORTED ? 'touchstart' : 'mousedown', function(evt) {
     if (evt.isDefaultPrevented()) return;
 
-    formLayer.$element.find('.pdf-form-field-focus').each(function(index, element) {
-      var formField = element.formField;
-      if (!formField) return;
+    if ($(evt.target).closest('.pdf-form-builder-panel')[0]) return;
 
-      formField.setFocused(false);
-    });
+    var focusedFormField = self._focusedFormField;
+    if (focusedFormField) focusedFormField.setFocused(false);
   });
 
-  formLayer.$element.delegate('.pdf-form-field', isTouchSupported ? 'touchstart' : 'mousedown', function(evt) {
+  $element.delegate('.pdf-form-field', PDFViewer.IS_TOUCH_SUPPORTED ? 'touchstart' : 'mousedown', function(evt) {
     var formField = this.formField;
     if (!formField) return;
 
@@ -111,23 +137,14 @@ var PDFFormBuilder = function PDFFormBuilder(pdfViewer) {
     evt.preventDefault();
   });
 
-  pdfViewer.$element.on(PDFViewer.EventType.ScaleChange, function(evt) {
-    var width  = pdfViewer.getActualWidth();
-    var height = pdfViewer.getActualHeight();
-    var margin = pdfViewer.getNumberOfPages() * 10;
-    var scaleX = scale.x = evt.calculatedScale;
-    var scaleY = scale.y = ((height * scaleX) + margin) / height;
-
-    formLayer.$element.css({
-      'margin-left': '-' + (width  / 2) + 'px',
-      'width':  width  + 'px',
-      'height': height + 'px',
-      '-webkit-transform': 'scale(' + scaleX + ',' + scaleY + ')',
-         '-moz-transform': 'scale(' + scaleX + ',' + scaleY + ')',
-          '-ms-transform': 'scale(' + scaleX + ',' + scaleY + ')',
-           '-o-transform': 'scale(' + scaleX + ',' + scaleY + ')',
-              'transform': 'scale(' + scaleX + ',' + scaleY + ')'
-    });
+  $element.on(PDFViewer.EventType.ScaleChange, function(evt) {
+    $style.html(
+      '.pdf-form-field > input,' +
+      '.pdf-form-field > label,' +
+      '.pdf-form-field > textarea {' +
+        'font-size: ' + (evt.calculatedScale * 100) + '%;' +
+      '}'
+    );
   });
 
   $panel.on('change', function(evt) {
@@ -147,8 +164,15 @@ var PDFFormBuilder = function PDFFormBuilder(pdfViewer) {
           var focusedFormField = self._focusedFormField;
           if (!focusedFormField) return;
 
-          self.deserializeFields([focusedFormField.serializeField()]);
-          focusedFormField.setFocused(true);
+          var formLayerIndex = self.getIndexOfFormLayer(focusedFormField.getFormLayer());
+          if (formLayerIndex === -1) formLayerIndex = viewer.getCurrentPageIndex();
+
+          var serializedFormLayers = {};
+          var serializedFormFields = serializedFormLayers[formLayerIndex] = {};
+          
+          serializedFormFields[PDFFormField.generateUniqueId()] = focusedFormField.serializeFormField();
+
+          self.deserializeFormLayers(JSON.parse(JSON.stringify(serializedFormLayers)));
         })();
         break;
       case '#remove':
@@ -156,7 +180,9 @@ var PDFFormBuilder = function PDFFormBuilder(pdfViewer) {
           var focusedFormField = self._focusedFormField;
           if (!focusedFormField) return;
 
-          focusedFormField.remove();
+          var formLayer = focusedFormField.getFormLayer();
+          formLayer.removeFormField(focusedFormField);
+          
           self.setFocusedFormField(null);
         })();
         break;
@@ -164,15 +190,84 @@ var PDFFormBuilder = function PDFFormBuilder(pdfViewer) {
         break;
     }
   });
+
+  this.setFocusedFormField(null);
+
+  // Wait for the PDFViewer to become ready before initializing the page layers.
+  viewer.$element.on(PDFViewer.EventType.Ready, function(evt) {
+    self.init();
+  });
 };
 
 PDFFormBuilder.prototype = {
   constructor: PDFFormBuilder,
 
   $panel: null,
+  $style: null,
 
-  _pdfViewer: null,
-  _formLayer: null,
+  _viewer: null,
+
+  init: function() {
+    var viewer = this._viewer;
+    var pageViews = viewer.getPageViews();
+    
+    var formLayers = this._formLayers = [];
+
+    for (var i = 0, length = pageViews.length; i < length; i++) {
+      formLayers.push(new PDFFormLayer(viewer, pageViews[i]));
+    }
+  },
+
+  _toolbarActions: null,
+
+  setToolbarAction: function(action, callback) {
+    this._toolbarActions[action] = callback;
+  },
+
+  _snapToGrid: false,
+
+  getSnapToGrid: function() { return this._snapToGrid; },
+
+  setSnapToGrid: function(snapToGrid) {
+    this._snapToGrid = snapToGrid;
+  },
+
+  _panelOpen: false,
+
+  getPanelOpen: function() { return this._panelOpen; },
+
+  openPanel: function() {
+    if (this._panelOpen) return;
+
+    this._panelOpen = true;
+    this.$panel.addClass('pdf-form-builder-panel-open');
+
+    $(window).trigger('resize');
+  },
+
+  closePanel: function() {
+    if (!this._panelOpen) return;
+
+    this._panelOpen = false;
+    this.$panel.removeClass('pdf-form-builder-panel-open');
+
+    $(window).trigger('resize');
+  },
+
+  _formLayers: null,
+
+  getFormLayers: function() { return this._formLayers; },
+
+  getCurrentFormLayer: function() { return this._formLayers[this._viewer.getCurrentPageIndex()]; },
+
+  getIndexOfFormLayer: function(formLayer) {
+    var formLayers = this._formLayers;
+    for (var i = 0, length = formLayers.length; i < length; i++) {
+      if (formLayers[i] === formLayer) return i;
+    }
+
+    return -1;
+  },
 
   _focusedFormField: null,
 
@@ -187,7 +282,7 @@ PDFFormBuilder.prototype = {
         '<form>' +
           '<ul>' +
             '<li>' +
-              '<h5>' + formField.getDescriptiveType() + '</h5>' +
+              '<h5>' + formField.DESCRIPTIVE_TYPE + '</h5>' +
             '</li>' +
             formField.getPropertiesForm() +
             '<li>' +
@@ -215,102 +310,40 @@ PDFFormBuilder.prototype = {
     }
   },
 
-  _scale: null,
-
-  getScale: function() { return this._scale; },
-
-  _panelOpen: false,
-
-  getPanelOpen: function() { return this._panelOpen; },
-
-  openPanel: function() {
-    if (this._panelOpen) return;
-
-    this._panelOpen = true;
-    this.$panel.addClass('pdf-form-builder-panel-open');
-
-    $(window).trigger('resize');
+  removeAllFormFields: function() {
+    var formLayers = this._formLayers;
+    for (var i = 0, length = formLayers.length; i < length; i++) {
+      formLayers[i].removeAllFormFields();
+    }
   },
 
-  closePanel: function() {
-    if (!this._panelOpen) return;
+  serializeFormLayers: function() {
+    var serializedFormLayers = {};
 
-    this._panelOpen = false;
-    this.$panel.removeClass('pdf-form-builder-panel-open');
+    var formLayers = this._formLayers;
+    var length = formLayers.length;
+    if (length === 0) return serializedFormLayers;
 
-    $(window).trigger('resize');
-  },
+    for (var i = 0, serializedFormFields; i < length; i++) {
+      serializedFormFields = formLayers[i].serializeFormFields();
+      if (!serializedFormFields) continue;
 
-  serializeFields: function() {
-    var serializedFields = {};
-    var formFields = this._formLayer._formFields;
-
-    for (var i = 0, length = formFields.length, serializedField, id; i < length; i++) {
-      serializedField = formFields[i].serializeField();
-      id = serializedField.id;
-
-      delete serializedField.id;
-
-      serializedFields[id] = serializedField;
+      serializedFormLayers[i] = serializedFormFields;
     }
 
-    return serializedFields;
+    return serializedFormLayers;
   },
 
-  deserializeFields: function(serializedFields, replaceExistingFields) {
-    var formLayer = this._formLayer;
-
+  deserializeFormLayers: function(serializedFormLayers, replaceExistingFields) {
     var focusedFormField = this._focusedFormField;
     if (focusedFormField) focusedFormField.setFocused(false);
 
-    if (replaceExistingFields) (function() {
-      var formFields = formLayer._formFields;
-      while (formFields.length > 0) formFields[0].remove();
-    })();
+    if (replaceExistingFields) this.removeAllFormFields();
 
-    var serializedField;
-    for (var id in serializedFields) {
-      serializedField = serializedFields[id];
-      serializedField.id = id;
-      
-      PDFFormField.deserializeField(formLayer, serializedField);
+    var formLayers = this._formLayers;
+
+    for (var index in serializedFormLayers) {
+      formLayers[index].deserializeFormFields(serializedFormLayers[index], replaceExistingFields);
     }
-  }
-};
-
-var PDFFormBuilderLayer = function PDFFormBuilderLayer(formBuilder) {
-  if (!(formBuilder instanceof PDFFormBuilder)) return console.error("Invalid instance of PDFFormBuilder", formBuilder);
-
-  this._formBuilder = formBuilder;
-
-  var $element = this.$element = $('<div class="pdf-form-builder-layer"/>').appendTo(formBuilder._pdfViewer.getScrollView().$content);
-  var element  = this.element  = $element[0];
-
-  var self = element.formLayer = this;
-
-  var formFields = this._formFields = [];
-};
-
-PDFFormBuilderLayer.prototype = {
-  constructor: PDFFormBuilderLayer,
-
-  _pdfViewer: null,
-  _formBuilder: null,
-
-  element: null,
-  $element: null,
-
-  _formFields: null,
-
-  getFormFields: function() { return this._formFields; },
-
-  getFormFieldById: function(id) {
-    var formFields = this._formFields;
-    for (var i = 0, length = formFields.length, formField; i < length; i++) {
-      formField = formFields[i];
-      if (formField && formField.getId() == id) return formField;
-    }
-
-    return null;
   }
 };

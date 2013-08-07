@@ -1,46 +1,57 @@
 ;'use strict';
 
-var PDFFormViewer = function PDFFormViewer(pdfViewer) {
-  if (!(pdfViewer instanceof PDFViewer)) return console.error("Invalid instance of PDFViewer", pdfViewer);
+var PDFFormViewer = function PDFFormViewer(viewer, options) {
+  if (!(viewer instanceof PDFViewer)) return console.error('Invalid instance of PDFViewer', viewer);
 
-  this._pdfViewer = pdfViewer;
+  options = options || {};
 
-  var self = pdfViewer._formViewer = this;
+  this._viewer = viewer;
 
-  pdfViewer.getFormViewer = function() { return this._formViewer; };
+  var self = viewer._formViewer = this;
 
-  var formLayer = this._formLayer = new PDFFormViewerLayer(this);
+  viewer.getFormViewer = function() { return this._formViewer; };
 
-  var scale = this._scale = { x: 1, y: 1 };
+  var $element = viewer.$element;
+  $element.addClass('pdf-form-viewer');
 
-  var $navbarContainer = pdfViewer.$navbarContainer;
-  var $navbarLeft = pdfViewer.$navbarLeft;
+  var $style = this.$style = $('<style/>').appendTo(document.body);
 
-  $('<li><a href="#open-form" rel="tooltip" title="Open Form"><i class="icon-upload-alt"/></a></li>').appendTo($navbarLeft);
-  $('<li class="divider"/>').appendTo($navbarLeft);
-  $('<li><a href="#open-data" rel="tooltip" title="Open Data"><i class="icon-upload-alt"/></a></li>').appendTo($navbarLeft);
-  $('<li><a href="#save-data" rel="tooltip" title="Save Data"><i class="icon-save"/></a></li>').appendTo($navbarLeft);
+  var toolbarActions = this._toolbarActions = {};
+
+  var $navbarContainer = viewer.$navbarContainer;
+  var $navbarLeft = viewer.$navbarLeft;
+
+  if (!options.hideOpenFormButton) $('<li><a href="#open-form" rel="tooltip" title="Open Form"><i class="icon-upload-alt"/></a></li>').appendTo($navbarLeft);
+  if (!options.hideOpenFormButton) $('<li class="divider"/>').appendTo($navbarLeft);
+  if (!options.hideOpenDataButton) $('<li><a href="#open-data" rel="tooltip" title="Open Data"><i class="icon-upload-alt"/></a></li>').appendTo($navbarLeft);
+  if (!options.hideSaveDataButton) $('<li><a href="#save-data" rel="tooltip" title="Save Data"><i class="icon-save"/></a></li>').appendTo($navbarLeft);
 
   $navbarContainer.delegate('a', 'click', function(evt) {
     evt.preventDefault();
 
     var $button = $(this);
     var href = $button.attr('href');
+    var position = viewer.getScrollView().getPosition();
+
+    if (typeof toolbarActions[href] === 'function') {
+      toolbarActions[href].call(self);
+      return;
+    }
 
     switch (href) {
       case '#open-form':
         (function() {
-          var serializedFields = window.prompt('Enter Form Field data in JSON format:\n\n(or press "OK" to load sample form)');
-          if (serializedFields === null) return;
+          var serializedFormLayers = window.prompt('Enter Form Layer data in JSON format:\n\n(or press "OK" to load sample form)');
+          if (serializedFormLayers === null) return;
 
-          serializedFields = $.trim(serializedFields);
-          if (serializedFields) {
-            self.deserializeFields(JSON.parse(serializedFields), true);
+          serializedFormLayers = $.trim(serializedFormLayers);
+          if (serializedFormLayers) {
+            self.deserializeFormLayers(JSON.parse(serializedFormLayers), true);
           }
 
           else {
             $.getJSON('data/form.json', function(data) {
-              self.deserializeFields(data, true);
+              self.deserializeFormLayers(data, true);
             });
           }
         })();
@@ -73,119 +84,109 @@ var PDFFormViewer = function PDFFormViewer(pdfViewer) {
     }
   });
 
-  pdfViewer.$element.on(PDFViewer.EventType.ScaleChange, function(evt) {
-    var width  = pdfViewer.getActualWidth();
-    var height = pdfViewer.getActualHeight();
-    var margin = pdfViewer.getNumberOfPages() * 10;
-    var scaleX = scale.x = evt.calculatedScale;
-    var scaleY = scale.y = ((height * scaleX) + margin) / height;
+  $element.on(PDFViewer.EventType.ScaleChange, function(evt) {
+    $style.html(
+      '.pdf-form-field > input,' +
+      '.pdf-form-field > label,' +
+      '.pdf-form-field > textarea {' +
+        'font-size: ' + (evt.calculatedScale * 100) + '%;' +
+      '}'
+    );
+  });
 
-    formLayer.$element.css({
-      'margin-left': '-' + (width  / 2) + 'px',
-      'width':  width  + 'px',
-      'height': height + 'px',
-      '-webkit-transform': 'scale(' + scaleX + ',' + scaleY + ')',
-         '-moz-transform': 'scale(' + scaleX + ',' + scaleY + ')',
-          '-ms-transform': 'scale(' + scaleX + ',' + scaleY + ')',
-           '-o-transform': 'scale(' + scaleX + ',' + scaleY + ')',
-              'transform': 'scale(' + scaleX + ',' + scaleY + ')'
-    });
+  // Wait for the PDFViewer to become ready before initializing the page layers.
+  viewer.$element.on(PDFViewer.EventType.Ready, function(evt) {
+    self.init();
   });
 };
 
 PDFFormViewer.prototype = {
   constructor: PDFFormViewer,
 
-  _pdfViewer: null,
-  _formLayer: null,
+  $style: null,
 
-  _scale: null,
+  _viewer: null,
 
-  getScale: function() { return this._scale; },
+  init: function() {
+    var viewer = this._viewer;
+    var pageViews = viewer.getPageViews();
+    
+    var formLayers = this._formLayers = [];
 
-  deserializeFields: function(serializedFields, replaceExistingFields) {
-    var formLayer = this._formLayer;
+    for (var i = 0, length = pageViews.length; i < length; i++) {
+      formLayers.push(new PDFFormLayer(viewer, pageViews[i]));
+    }
+  },
 
-    var focusedFormField = this._focusedFormField;
-    if (focusedFormField) focusedFormField.setFocused(false);
+  _toolbarActions: null,
 
-    if (replaceExistingFields) (function() {
-      var formFields = formLayer._formFields;
-      while (formFields.length > 0) formFields[0].remove();
-    })();
+  setToolbarAction: function(action, callback) {
+    this._toolbarActions[action] = callback;
+  },
 
-    var serializedField;
-    for (var id in serializedFields) {
-      serializedField = serializedFields[id];
-      serializedField.id = id;
-      
-      PDFFormField.deserializeField(formLayer, serializedField);
+  _focusedFormField: null,
+
+  getFocusedFormField: function() { return this._focusedFormField; },
+
+  setFocusedFormField: function(formField) {
+    this._focusedFormField = formField;
+  },
+
+  getFormFieldById: function(id) {
+    var formLayers = this._formLayers;
+    for (var i = 0, length = formLayers.length, formField; i < length; i++) {
+      formField = formLayers[i].getFormFieldById(id);
+      if (formField) return formField;
+    }
+
+    return null;
+  },
+
+  removeAllFormFields: function() {
+    var formLayers = this._formLayers;
+    for (var i = 0, length = formLayers.length; i < length; i++) {
+      formLayers[i].removeAllFormFields();
+    }
+  },
+
+  deserializeFormLayers: function(serializedFormLayers, replaceExistingFields) {
+    if (replaceExistingFields) this.removeAllFormFields();
+
+    var formLayers = this._formLayers;
+
+    for (var index in serializedFormLayers) {
+      formLayers[index].deserializeFormFields(serializedFormLayers[index], replaceExistingFields);
     }
   },
 
   serializeValues: function() {
     var serializedValues = {};
-    var formFields = this._formLayer._formFields;
 
-    for (var i = 0, length = formFields.length, serializedValue, id; i < length; i++) {
-      serializedValue = formFields[i].serializeValue();
-      id = serializedValue.id;
+    var formLayers = this._formLayers;
+    var length = formLayers.length;
+    if (length === 0) return serializedFormLayers;
 
-      delete serializedValue.id;
+    for (var i = 0, serializedFormLayerValues, id; i < length; i++) {
+      serializedFormLayerValues = formLayers[i].serializeValues();
 
-      serializedValues[id] = serializedValue;
+      for (id in serializedFormLayerValues) {
+        serializedValues[id] = {
+          value: serializedFormLayerValues[id]
+        };
+      }
     }
 
     return serializedValues;
   },
 
   deserializeValues: function(serializedValues) {
-    var formLayer = this._formLayer;
-
     var serializedValue, formField;
     for (var id in serializedValues) {
-      if (!(formField = formLayer.getFormFieldById(id))) continue;
+      if (!(formField = this.getFormFieldById(id))) continue;
 
       serializedValue = serializedValues[id];
 
       formField.setValue(serializedValue.value);
     }
-  }
-};
-
-var PDFFormViewerLayer = function PDFFormViewerLayer(formViewer) {
-  if (!(formViewer instanceof PDFFormViewer)) return console.error("Invalid instance of PDFFormViewer", formViewer);
-
-  this._formViewer = formViewer;
-
-  var $element = this.$element = $('<div class="pdf-form-viewer-layer"/>').appendTo(formViewer._pdfViewer.getScrollView().$content);
-  var element  = this.element  = $element[0];
-
-  var self = element.formLayer = this;
-
-  var formFields = this._formFields = [];
-};
-
-PDFFormViewerLayer.prototype = {
-  constructor: PDFFormViewerLayer,
-
-  _pdfViewer: null,
-  _formViewer: null,
-
-  element: null,
-  $element: null,
-
-  _formFields: null,
-
-  getFormFields: function() { return this._formFields; },
-
-  getFormFieldById: function(id) {
-    var formFields = this._formFields;
-    for (var i = 0, length = formFields.length, formField; i < length; i++) {
-      formField = formFields[i];
-      if (formField && formField.getId() == id) return formField;
-    }
-
-    return null;
   }
 };
