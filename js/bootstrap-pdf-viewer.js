@@ -157,6 +157,7 @@ var PDFViewer = function PDFViewer(element) {
 };
 
 PDFViewer.MINIMUM_HEIGHT     = 400;
+PDFViewer.VIEWER_MARGIN      = 10;
 PDFViewer.PAGE_SPACING       = 10;
 PDFViewer.UPDATE_TIMEOUT     = 100;
 PDFViewer.SCROLLBAR_PADDING  = 20;
@@ -491,7 +492,7 @@ PDFViewer.prototype = {
 
     var windowHeight = $(window).height();
     var viewerOffset = $element.offset().top;
-    var viewerMargin = window.parseInt($element.css('margin-bottom'), 10) + 2;
+    var viewerMargin = PDFViewer.VIEWER_MARGIN;
     
     var height = windowHeight - viewerOffset - viewerMargin;
     
